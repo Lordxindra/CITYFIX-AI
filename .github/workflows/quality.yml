@@ -1,0 +1,63 @@
+name: CityFix quality checks
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  static-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Check JavaScript syntax
+        run: |
+          node --check app.js
+          node --check supabase-client.js
+          node --check supabase/config.js
+      - name: Check HTML and local asset references
+        run: |
+          python - <<'PY'
+          from html.parser import HTMLParser
+          from pathlib import Path
+          class Checker(HTMLParser):
+              def __init__(self):
+                  super().__init__()
+                  self.refs=[]
+              def handle_starttag(self, tag, attrs):
+                  a=dict(attrs)
+                  for key in ('src','href'):
+                      value=a.get(key,'')
+                      if value and not value.startswith(('http://','https://','mailto:','#','data:','javascript:')):
+                          self.refs.append(value.split('#')[0].split('?')[0])
+          for page in ('index.html','app.html'):
+              p=Path(page)
+              parser=Checker()
+              parser.feed(p.read_text(encoding='utf-8'))
+              missing=[ref for ref in parser.refs if ref and not (p.parent/ref).exists()]
+              if missing:
+                  raise SystemExit(f'{page}: missing local assets: {missing}')
+              print(f'{page}: HTML parsed; local references present')
+          PY
+      - name: Verify required project files
+        run: |
+          test -f cityfix-logo.svg
+          test -f landing.css
+          test -f styles.css
+          test -f supabase/schema.sql
+          test -f supabase/functions/triage-image/index.ts
+          test -f docs/FINAL_SUBMISSION_CHECKLIST.md
+      - name: Check no obvious service-role key is committed
+        run: |
+          if grep -R -n -E 'service_role|sb_secret_[A-Za-z0-9]+' --include='*.js' --include='*.html' --include='*.ts' .; then
+            echo "Potential privileged key found in client/source files"
+            exit 1
+          fi
