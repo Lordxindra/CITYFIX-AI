@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#0b1020" />
+  <title>CityFix AI — Better cities, together</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="styles.css" />\n  <link rel="manifest" href="manifest.webmanifest" />\n  <link rel="icon" href="cityfix-logo.svg" type="image/svg+xml" />
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <a class="brand" href="#" aria-label="CityFix home">
+        <span class="brand-mark">C<span>+</span></span>
+        <span><b>cityfix</b><small>URBAN INTELLIGENCE</small></span>
+      </a>
+      <div class="workspace-label">WORKSPACE</div>
+      <nav class="nav">
+        <button class="nav-item active" data-view="overview"><span>◫</span> Overview</button>
+        <button class="nav-item" data-view="explore"><span>⌖</span> City map</button>
+        <button class="nav-item" data-view="reports"><span>▤</span> Issue reports <i id="nav-count">0</i></button>
+        <button class="nav-item" data-view="impact"><span>✳</span> Community impact</button>
+      </nav>
+      <div class="sidebar-bottom">
+        <div class="city-card"><div class="pulse"></div><div><b>Jaipur, Rajasthan</b><small>Demo city workspace</small></div></div>
+        <div class="profile"><div class="avatar">MF</div><div><b>CityFix Resident</b><small>Community member</small></div><span>•••</span></div>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div><div class="eyebrow">SUNDAY, NOVEMBER 22, 2026 <span class="live-dot"></span> DEMO ENVIRONMENT</div><h1 id="page-title">City overview</h1></div>
+        <div class="top-actions"><button class="icon-btn" id="admin-toggle" title="Toggle admin mode">⚙ <span>Admin mode: off</span></button><button class="primary-btn" id="open-report">＋ Report an issue</button></div>
+      </header>
+
+      <section class="view active" id="view-overview">
+        <div class="welcome-row"><div><div class="eyebrow purple">CITY PULSE · LIVE DEMO</div><h2>Small reports. <em>Smarter cities.</em></h2><p class="muted">See what needs attention and help make your neighbourhood better.</p></div><div class="weather-chip"><span>☀</span><div><b>Jaipur</b><small>City workspace</small></div></div></div>
+        <div class="stats-grid">
+          <article class="stat-card"><div class="stat-top"><span>Open issues</span><span class="stat-icon violet">▤</span></div><strong id="stat-open">0</strong><small><span class="up">●</span> Need community attention</small></article>
+          <article class="stat-card"><div class="stat-top"><span>Resolved</span><span class="stat-icon green">✓</span></div><strong id="stat-resolved">0</strong><small>Marked resolved in this demo</small></article>
+          <article class="stat-card"><div class="stat-top"><span>High priority</span><span class="stat-icon orange">↗</span></div><strong id="stat-priority">0</strong><small>Safety and access first</small></article>
+          <article class="stat-card"><div class="stat-top"><span>Community points</span><span class="stat-icon blue">✳</span></div><strong id="stat-points">120</strong><small>Your participation score</small></article>
+        </div>
+        <div class="content-grid">
+          <section class="panel map-panel"><div class="panel-head"><div><h3>City issue map</h3><p>Explore reported issues across the demo city</p></div><button class="text-btn" data-goto="explore">Explore map ↗</button></div><div id="mini-map" class="map"></div><div class="map-legend"><span><i class="dot red"></i> High priority</span><span><i class="dot yellow"></i> In progress</span><span><i class="dot green"></i> Resolved</span></div></section>
+          <section class="panel"><div class="panel-head"><div><h3>Needs attention</h3><p>Priority-ranked community reports</p></div><span class="soft-tag">AI triage · demo</span></div><div id="priority-list" class="priority-list"></div></section>
+        </div>
+        <section class="panel bottom-panel"><div class="panel-head"><div><h3>Recent community activity</h3><p>Latest reports submitted to CityFix</p></div><button class="text-btn" data-goto="reports">View all →</button></div><div id="recent-list" class="recent-list"></div></section>
+      </section>
+
+      <section class="view" id="view-explore">
+        <div class="section-intro"><div><div class="eyebrow purple">GEOSPATIAL INTELLIGENCE</div><h2>Explore your city</h2><p class="muted">Find reported problems, understand clusters and spot priority areas.</p></div><div class="filter-pills"><button class="filter active" data-mapfilter="all">All issues</button><button class="filter" data-mapfilter="open">Open</button><button class="filter" data-mapfilter="resolved">Resolved</button></div></div>
+        <div class="panel full-map-panel"><div id="full-map" class="map large-map"></div><div class="map-foot"><span>⌖ Map uses OpenStreetMap tiles</span><span id="map-total">0 reports displayed</span></div></div>
+      </section>
+
+      <section class="view" id="view-reports">
+        <div class="section-intro"><div><div class="eyebrow purple">CITIZEN REPORTING</div><h2>Issue intelligence</h2><p class="muted">A transparent view of reports and their current status.</p></div><button class="primary-btn" id="open-report-2">＋ New report</button></div>
+        <div class="toolbar"><input id="search-reports" type="search" placeholder="Search by issue, location or ID…" /><select id="status-filter"><option value="all">All statuses</option><option value="Open">Open</option><option value="In progress">In progress</option><option value="Resolved">Resolved</option></select><select id="category-filter"><option value="all">All categories</option><option>Road damage</option><option>Garbage</option><option>Waterlogging</option><option>Streetlight</option><option>Other</option></select></div>
+        <div class="panel table-panel"><div class="table-wrap"><table><thead><tr><th>REPORT</th><th>LOCATION</th><th>CATEGORY</th><th>PRIORITY</th><th>STATUS</th><th>UPDATED</th><th></th></tr></thead><tbody id="reports-body"></tbody></table></div><div id="empty-state" class="empty-state" hidden>No reports match your filters.</div></div>
+      </section>
+
+      <section class="view" id="view-impact">
+        <div class="section-intro"><div><div class="eyebrow purple">COMMUNITY POWER</div><h2>Impact, made visible</h2><p class="muted">Recognition for people who help make neighbourhoods better.</p></div></div>
+        <div class="impact-grid"><div class="panel impact-hero"><div class="eyebrow">YOUR COMMUNITY SCORE</div><div class="big-score" id="impact-points">120<span> pts</span></div><p>Every useful report helps the city understand what needs attention.</p><div class="progress"><span></span></div><small>Demo points · 30 points per submitted report</small></div><div class="panel"><h3>Community milestones</h3><div class="milestone"><span class="milestone-icon">◎</span><div><b>First responder</b><small>Submit your first issue report</small></div><span class="soft-tag">Unlocked</span></div><div class="milestone"><span class="milestone-icon">✦</span><div><b>Neighbourhood voice</b><small>Submit 3 issue reports</small></div><span class="soft-tag" id="milestone-three">In progress</span></div><div class="milestone"><span class="milestone-icon">♧</span><div><b>Community champion</b><small>Submit 5 issue reports</small></div><span class="soft-tag" id="milestone-five">In progress</span></div></div></div>
+        <div class="panel"><div class="panel-head"><div><h3>Ward activity leaderboard</h3><p>Illustrative demo ranking, not official municipal data</p></div><span class="soft-tag">Sample data</span></div><div class="leader-row"><span class="rank">01</span><div class="leader-avatar">J</div><div class="leader-name"><b>Vaishali Nagar</b><small>Community activity</small></div><b>84 <small>reports</small></b></div><div class="leader-row"><span class="rank">02</span><div class="leader-avatar">M</div><div class="leader-name"><b>Malviya Nagar</b><small>Community activity</small></div><b>67 <small>reports</small></b></div><div class="leader-row"><span class="rank">03</span><div class="leader-avatar">M</div><div class="leader-name"><b>Mansarovar</b><small>Community activity</small></div><b>52 <small>reports</small></b></div></div>
+      </section>
+      <footer>CityFix AI <span>·</span> Buildathon prototype <span>·</span> Demo data is clearly labelled and not an official government service.</footer>
+    </main>
+  </div>
+
+  <div class="modal-backdrop" id="report-modal" aria-hidden="true">
+    <div class="modal"><div class="modal-head"><div><div class="eyebrow purple">CITIZEN REPORT</div><h2>Help fix your city.</h2><p class="muted">Share what you noticed. We'll organise the information.</p></div><button class="close-btn" id="close-modal">×</button></div>
+      <form id="report-form">
+        <label>What is the issue? <input id="issue-title" required maxlength="70" placeholder="e.g. Large pothole near the market" /></label>
+        <div class="form-row"><label>Category<select id="issue-category"><option>Road damage</option><option>Garbage</option><option>Waterlogging</option><option>Streetlight</option><option>Other</option></select></label><label>Location<input id="issue-location" required placeholder="e.g. Jhotwara, Jaipur" /></label></div>
+        <label>Describe the problem<textarea id="issue-description" rows="3" placeholder="What happened? Is it blocking access or creating a safety risk?"></textarea></label>
+        <div class="form-row"><label>Safety impact<select id="issue-safety"><option value="Normal">Normal</option><option value="High">High — safety risk</option><option value="Critical">Critical — immediate danger</option></select></label><label>Photo (optional)<input id="issue-photo" type="file" accept="image/*" /></label></div>
+        <div id="photo-preview" class="photo-preview"></div>
+        <div class="ai-result" id="ai-result"><span>✦</span><div><b>Smart triage preview</b><small>Priority suggestion will appear as you describe the issue. This prototype uses transparent demo rules, not a trained AI model.</small></div></div>
+        <button class="primary-btn submit-btn" type="submit">Submit community report <span>→</span></button>
+      </form>
+    </div>
+  </div>
+  <div class="toast" id="toast"></div>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
