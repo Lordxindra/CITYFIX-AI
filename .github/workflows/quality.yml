@@ -55,9 +55,9 @@ jobs:
           test -f supabase/schema.sql
           test -f supabase/functions/triage-image/index.ts
           test -f docs/FINAL_SUBMISSION_CHECKLIST.md
-      - name: Check no obvious service-role key is committed
+      - name: Check for exposed Supabase secret-key prefixes
         run: |
-          if grep -R -n -E 'sb_secret_[A-Za-z0-9]+' --include='*.ts' .; then
-            echo "Potential privileged key found in client/source files"
+          if grep -R -n -E 'sb_secret_[A-Za-z0-9]+' --include='*.js' --include='*.html' --include='*.ts' .; then
+            echo "Potential privileged key found in source files"
             exit 1
           fi
