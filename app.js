@@ -552,6 +552,9 @@ async function submitReport(event) {
     )
   ) + 1;
 
+  const chosenLat = $("#issue-lat")?.value ? Number($("#issue-lat").value) : null;
+  const chosenLon = $("#issue-lon")?.value ? Number($("#issue-lon").value) : null;
+
   const report = {
     id: `CF-${nextNumber}`,
     title,
@@ -560,8 +563,8 @@ async function submitReport(event) {
     priority,
     status: "Open",
     date: "Just now",
-    lat: window.CityFixCloud?.isConfigured ? null : 26.9124 + (Math.random() - 0.5) * 0.045,
-    lon: window.CityFixCloud?.isConfigured ? null : 75.7873 + (Math.random() - 0.5) * 0.055,
+    lat: chosenLat,
+    lon: chosenLon,
     description: $("#issue-description").value.trim()
   };
 
@@ -673,6 +676,22 @@ function bindEvents() {
     "change",
     previewPhoto
   );
+
+  $("#use-location")?.addEventListener("click", () => {
+    if (!navigator.geolocation) {
+      showToast("This browser does not support location sharing.");
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      position => {
+        $("#issue-lat").value = position.coords.latitude;
+        $("#issue-lon").value = position.coords.longitude;
+        showToast("Location added after your permission.");
+      },
+      () => showToast("Location was not shared. You can still enter a neighbourhood."),
+      { enableHighAccuracy: false, timeout: 10000, maximumAge: 60000 }
+    );
+  });
 
   $("#ai-classify-photo")?.addEventListener("click", async () => {
     const file = $("#issue-photo").files[0];
