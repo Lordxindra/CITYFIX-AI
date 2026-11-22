@@ -8,10 +8,12 @@ Deadline in the supplied problem statement: Saturday, 28 November 2026, 11:59 PM
 - [x] GitHub source repository and setup instructions: https://github.com/Lordxindra/CITYFIX-AI
 - [x] Product overview, technical approach, limitations and future improvements in repository docs
 - [x] Brand identity direction and logo source in repository
-- [ ] Export the brand kit as PDF and attach it to the final submission
+- [x] Brand kit PDF prepared in the downloadable media pack
+- [x] Project documentation PDF prepared in the downloadable media pack
 - [ ] Conduct and document real resident interviews or other real problem validation
-- [ ] Complete and rehearse the 60–90 second launch film
-- [ ] Record and export the 2–3 minute explainer with an actual working product demonstration
+- [x] 75-second launch-film draft rendered; review narration and final edit before submission
+- [x] 150-second explainer draft rendered from current product screenshots; replace/insert a real screen recording of the live workflow before final submission
+- [x] Five original social-post artwork files prepared in the downloadable media pack
 - [ ] Create a new project-branded Instagram account and a new project-branded X account
 - [ ] Publish at least five original posts on Instagram and X, each with both required hashtags and organiser tags
 - [ ] Save links to all posts
