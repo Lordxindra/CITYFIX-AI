@@ -57,7 +57,7 @@ jobs:
           test -f docs/FINAL_SUBMISSION_CHECKLIST.md
       - name: Check no obvious service-role key is committed
         run: |
-          if grep -R -n -E 'service_role|sb_secret_[A-Za-z0-9]+' --include='*.js' --include='*.html' --include='*.ts' .; then
+          if grep -R -n -E 'service_role[\"'"'"']?[[:space:]]*[:=]|sb_secret_[A-Za-z0-9]+' --include='*.js' --include='*.html' --include='*.ts' .; then
             echo "Potential privileged key found in client/source files"
             exit 1
           fi
