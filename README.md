@@ -53,6 +53,7 @@ The Edge Function accepts an authenticated image (JPEG, PNG or WebP, max 5 MB), 
 - Final submission checklist: docs/FINAL_SUBMISSION_CHECKLIST.md
 - Team roles: docs/TEAM_ROLES.md
 - AI and tools disclosure: docs/AI_AND_TOOLS_DISCLOSURE.md
+- Supabase and AI setup: docs/SUPABASE_SETUP.md
 
 ## Tech and third-party resources
 HTML, CSS, JavaScript, Supabase JS v2 (optional), Supabase Postgres/Auth/Storage/Edge Functions (optional), Gemini API (optional), Leaflet 1.9.4, OpenStreetMap tiles, Google Fonts. See docs/THIRD_PARTY_NOTICES.md.
