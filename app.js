@@ -343,6 +343,7 @@ function drawMarkers(map, mapType) {
   });
 
   filtered.forEach(report => {
+    if (!Number.isFinite(report.lat) || !Number.isFinite(report.lon)) return;
     const color =
       report.status === "Resolved"
         ? "#34d399"
@@ -502,17 +503,24 @@ function closeModal() {
   $("#report-modal").setAttribute("aria-hidden", "true");
 }
 
-function updateStatus(id) {
+async function updateStatus(id) {
   const report = reports.find(r => r.id === id);
   if (!report) return;
 
-  report.status =
-    report.status === "Open"
-      ? "In progress"
-      : report.status === "In progress"
-        ? "Resolved"
-        : "Open";
+  const nextStatus =
+    report.status === "Open" ? "In progress" :
+    report.status === "In progress" ? "Resolved" : "Open";
 
+  if (window.CityFixCloud?.isConfigured && report.dbId) {
+    try {
+      await window.CityFixCloud.updateIssueStatus(report.dbId, nextStatus);
+    } catch (error) {
+      showToast(error.message || "Could not update cloud report.");
+      return;
+    }
+  }
+
+  report.status = nextStatus;
   saveData();
   renderEverything();
 
@@ -523,7 +531,7 @@ function updateStatus(id) {
 // SUBMIT REPORT
 // ==========================================
 
-function submitReport(event) {
+async function submitReport(event) {
   event.preventDefault();
 
   const title = $("#issue-title").value.trim();
@@ -552,23 +560,37 @@ function submitReport(event) {
     priority,
     status: "Open",
     date: "Just now",
-    lat: 26.9124 + (Math.random() - 0.5) * 0.045,
-    lon: 75.7873 + (Math.random() - 0.5) * 0.055,
+    lat: window.CityFixCloud?.isConfigured ? null : 26.9124 + (Math.random() - 0.5) * 0.045,
+    lon: window.CityFixCloud?.isConfigured ? null : 75.7873 + (Math.random() - 0.5) * 0.055,
     description: $("#issue-description").value.trim()
   };
 
+  if (window.CityFixCloud?.isConfigured) {
+    try {
+      const photo = $("#issue-photo").files[0] || null;
+      const savedReport = await window.CityFixCloud.createIssue(report, photo);
+      reports.unshift(savedReport);
+      renderEverything();
+      closeModal();
+      event.target.reset();
+      $("#photo-preview").innerHTML = "";
+      showToast("Report saved to shared CityFix cloud.");
+      navigate("reports");
+      return;
+    } catch (error) {
+      showToast(error.message || "Cloud submission failed.");
+      return;
+    }
+  }
+
   reports.unshift(report);
   points += 30;
-
   saveData();
   renderEverything();
-
   closeModal();
   event.target.reset();
   $("#photo-preview").innerHTML = "";
-
-  showToast("Report submitted · +30 community points");
-
+  showToast("Demo report saved locally · +30 points");
   navigate("reports");
 }
 
@@ -652,7 +674,48 @@ function bindEvents() {
     previewPhoto
   );
 
-  $("#admin-toggle").onclick = () => {
+  $("#ai-classify-photo")?.addEventListener("click", async () => {
+    const file = $("#issue-photo").files[0];
+    if (!file) { showToast("Choose a photo first."); return; }
+    if (!window.CityFixCloud?.isConfigured) {
+      showToast("Connect Supabase and deploy the AI function first.");
+      return;
+    }
+    const button = $("#ai-classify-photo");
+    button.disabled = true;
+    button.textContent = "Analysing photo…";
+    try {
+      const result = await window.CityFixCloud.classifyPhoto(file);
+      const categories = {
+        road_damage: "Road damage", garbage: "Garbage",
+        waterlogging: "Waterlogging", streetlight: "Streetlight", other: "Other"
+      };
+      $("#issue-category").value = categories[result.category] || "Other";
+      $("#issue-safety").value =
+        result.priority === "critical" ? "Critical" :
+        result.priority === "high" ? "High" : "Normal";
+      if (!$("#issue-description").value.trim() && result.summary) {
+        $("#issue-description").value = result.summary;
+      }
+      $("#ai-result").innerHTML = `
+        <span>✦</span><div>
+          <b>AI suggestion: ${result.priority} · ${Math.round((result.confidence || 0)*100)}% confidence</b>
+          <small>${escapeHTML(result.summary || "Image analysed.")} Human review required. ${escapeHTML(result.safety_reason || "")}</small>
+        </div>`;
+      showToast("AI photo suggestion ready. Review before submitting.");
+    } catch (error) {
+      showToast(error.message || "AI image analysis failed.");
+    } finally {
+      button.disabled = false;
+      button.textContent = "✦ Analyse photo with AI";
+    }
+  });
+
+  $("#admin-toggle").onclick = async () => {
+    if (window.CityFixCloud?.isConfigured && !(await window.CityFixCloud.isAdmin())) {
+      showToast("Cloud admin mode is restricted to an authorised account.");
+      return;
+    }
     adminMode = !adminMode;
 
     $("#admin-toggle").innerHTML =
@@ -714,3 +777,42 @@ function startCityFix() {
 }
 
 startCityFix();
+
+const cloudButton = $("#cloud-auth");
+if (cloudButton) {
+  cloudButton.onclick = async () => {
+    if (!window.CityFixCloud?.isConfigured) {
+      showToast("Add Supabase URL and publishable key in supabase/config.js.");
+      return;
+    }
+    try {
+      const session = await window.CityFixCloud.getSession();
+      if (session?.user) {
+        await window.CityFixCloud.signOut();
+        cloudButton.innerHTML = "☁ <span>Cloud sign in</span>";
+        showToast("Signed out of CityFix cloud.");
+      } else {
+        const email = prompt("Enter your email to receive a secure sign-in link:");
+        if (!email) return;
+        await window.CityFixCloud.signIn(email.trim());
+        showToast("Check your email for the secure sign-in link.");
+      }
+    } catch (error) {
+      showToast(error.message || "Cloud sign-in failed.");
+    }
+  };
+}
+
+if (window.CityFixCloud?.isConfigured) {
+  window.CityFixCloud.getSession().then(session => {
+    if (session?.user && cloudButton) cloudButton.innerHTML = "☁ <span>Cloud connected</span>";
+  }).catch(console.warn);
+
+  window.CityFixCloud.loadIssues().then(cloudReports => {
+    reports = cloudReports || [];
+    renderEverything();
+    showToast("Shared CityFix reports loaded.");
+  }).catch(error => {
+    console.warn("Cloud load failed; local demo remains available.", error);
+  });
+}
