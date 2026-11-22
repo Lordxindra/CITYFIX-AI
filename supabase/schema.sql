@@ -144,3 +144,19 @@ for select to authenticated using (
 -- IMPORTANT: after the first user signs in, promote the intended admin manually:
 -- update public.profiles set is_admin = true where id = (select id from auth.users where email = 'YOUR_ADMIN_EMAIL');
 -- Never expose the service_role key in browser code.
+
+
+-- Record every admin status transition for an auditable history.
+create or replace function public.log_issue_status_change()
+returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  if old.status is distinct from new.status then
+    insert into public.issue_events(issue_id, actor_id, old_status, new_status, note)
+    values(new.id, auth.uid(), old.status, new.status, 'Status changed by an authorised admin');
+  end if;
+  return new;
+end; $$;
+
+drop trigger if exists issues_log_status_change on public.issues;
+create trigger issues_log_status_change after update of status on public.issues
+for each row execute function public.log_issue_status_change();
