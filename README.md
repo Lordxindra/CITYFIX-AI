@@ -1,4 +1,4 @@
-# CITYFIX AI
+﻿# CITYFIX AI
 ### Report less. Resolve more.
 
 CityFix AI is an independent civic-tech buildathon prototype for documenting public-space issues, viewing them on a map, and making triage reasoning and report status easier to understand.

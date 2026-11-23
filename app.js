@@ -1,8 +1,8 @@
-
+﻿
 "use strict";
 
 // ==========================================
-// CITYFIX AI — COMPLETE APPLICATION ENGINE
+// CITYFIX AI ΓÇö COMPLETE APPLICATION ENGINE
 // ==========================================
 
 const $ = (selector) => document.querySelector(selector);
@@ -119,12 +119,12 @@ function priorityRank(priority) {
 
 function categoryIcon(category) {
   return {
-    "Road damage": "⌁",
-    "Garbage": "♲",
-    "Waterlogging": "≈",
-    "Streetlight": "☼",
-    "Other": "◇"
-  }[category] || "◇";
+    "Road damage": "Γîü",
+    "Garbage": "ΓÖ▓",
+    "Waterlogging": "Γëê",
+    "Streetlight": "Γÿ╝",
+    "Other": "Γùç"
+  }[category] || "Γùç";
 }
 
 function statusClass(status) {
@@ -197,7 +197,7 @@ function renderPriorityList() {
         </div>
         <div class="priority-copy">
           <b>${escapeHTML(r.title)}</b>
-          <small>${escapeHTML(r.location)} · ${r.id}</small>
+          <small>${escapeHTML(r.location)} ┬╖ ${r.id}</small>
         </div>
         <span class="priority-score">${r.priority}</span>
       </div>
@@ -219,7 +219,7 @@ function renderRecentActivity() {
         </div>
         <div class="recent-copy">
           <b>${escapeHTML(r.title)}</b>
-          <small>${escapeHTML(r.location)} · ${r.date}</small>
+          <small>${escapeHTML(r.location)} ┬╖ ${r.date}</small>
         </div>
         <span class="status ${statusClass(r.status)}">
           ${r.status}
@@ -272,7 +272,7 @@ function renderTable() {
                data-status="${r.id}">
                Update status
              </button>`
-          : "—"}
+          : "ΓÇö"}
       </td>
     </tr>
   `).join("");
@@ -285,7 +285,7 @@ function renderTable() {
 }
 
 // ==========================================
-// MAP ENGINE — FIXED
+// MAP ENGINE ΓÇö FIXED
 // ==========================================
 
 function initializeMap(selector, center, zoom) {
@@ -365,7 +365,7 @@ function drawMarkers(map, mapType) {
     marker.bindPopup(`
       <strong>${escapeHTML(report.title)}</strong>
       <br>${escapeHTML(report.location)}
-      <br><small>${report.priority} · ${report.status}</small>
+      <br><small>${report.priority} ┬╖ ${report.status}</small>
     `);
 
     mapMarkers[mapType].push(marker);
@@ -475,7 +475,7 @@ function classifyIssue() {
   }
 
   $("#ai-result").innerHTML = `
-    <span>✦</span>
+    <span>Γ£ª</span>
     <div>
       <b>Suggested priority: ${priority}</b>
       <small>
@@ -593,7 +593,7 @@ async function submitReport(event) {
   closeModal();
   event.target.reset();
   $("#photo-preview").innerHTML = "";
-  showToast("Demo report saved locally · +30 points");
+  showToast("Demo report saved locally ┬╖ +30 points");
   navigate("reports");
 }
 
@@ -702,7 +702,7 @@ function bindEvents() {
     }
     const button = $("#ai-classify-photo");
     button.disabled = true;
-    button.textContent = "Analysing photo…";
+    button.textContent = "Analysing photoΓÇª";
     try {
       const result = await window.CityFixCloud.classifyPhoto(file);
       const categories = {
@@ -717,8 +717,8 @@ function bindEvents() {
         $("#issue-description").value = result.summary;
       }
       $("#ai-result").innerHTML = `
-        <span>✦</span><div>
-          <b>AI suggestion: ${result.priority} · ${Math.round((result.confidence || 0)*100)}% confidence</b>
+        <span>Γ£ª</span><div>
+          <b>AI suggestion: ${result.priority} ┬╖ ${Math.round((result.confidence || 0)*100)}% confidence</b>
           <small>${escapeHTML(result.summary || "Image analysed.")} Human review required. ${escapeHTML(result.safety_reason || "")}</small>
         </div>`;
       showToast("AI photo suggestion ready. Review before submitting.");
@@ -726,7 +726,7 @@ function bindEvents() {
       showToast(error.message || "AI image analysis failed.");
     } finally {
       button.disabled = false;
-      button.textContent = "✦ Analyse photo with AI";
+      button.textContent = "Γ£ª Analyse photo with AI";
     }
   });
 
@@ -738,7 +738,7 @@ function bindEvents() {
     adminMode = !adminMode;
 
     $("#admin-toggle").innerHTML =
-      `⚙ <span>Admin mode: ${adminMode ? "on" : "off"}</span>`;
+      `ΓÜÖ <span>Admin mode: ${adminMode ? "on" : "off"}</span>`;
 
     renderTable();
 
@@ -808,7 +808,7 @@ if (cloudButton) {
       const session = await window.CityFixCloud.getSession();
       if (session?.user) {
         await window.CityFixCloud.signOut();
-        cloudButton.innerHTML = "☁ <span>Cloud sign in</span>";
+        cloudButton.innerHTML = "Γÿü <span>Cloud sign in</span>";
         showToast("Signed out of CityFix cloud.");
       } else {
         const email = prompt("Enter your email to receive a secure sign-in link:");
@@ -824,7 +824,7 @@ if (cloudButton) {
 
 if (window.CityFixCloud?.isConfigured) {
   window.CityFixCloud.getSession().then(session => {
-    if (session?.user && cloudButton) cloudButton.innerHTML = "☁ <span>Cloud connected</span>";
+    if (session?.user && cloudButton) cloudButton.innerHTML = "Γÿü <span>Cloud connected</span>";
   }).catch(console.warn);
 
   window.CityFixCloud.loadIssues().then(cloudReports => {
