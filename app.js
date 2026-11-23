@@ -2314,7 +2314,7 @@ function ensureReportPinMap() {
   const el = $("#report-pin-map");
   if (!el || !window.L) return null;
   if (!reportPinMap) {
-    reportPinMap = L.map(el, { scrollWheelZoom: true }).setView([26.9124, 75.7873], 12);
+    reportPinMap = L.map(el, { scrollWheelZoom: false }).setView([26.9124, 75.7873], 12);
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
       attribution: "&copy; OpenStreetMap contributors",
       maxZoom: 19,
@@ -2362,6 +2362,14 @@ function openReportModal(prefill = null) {
 
   $("#report-modal").classList.add("open");
   $("#report-modal").setAttribute("aria-hidden", "false");
+  const modalBox = $("#report-modal .modal");
+  if (modalBox) modalBox.scrollTop = 0;
+
+  if (reportPinMap && !$("#report-pin-map-wrap")?.hidden) {
+    requestAnimationFrame(() => {
+      setTimeout(() => reportPinMap?.invalidateSize(true), 120);
+    });
+  }
 }
 
 function closeReportModal() {
@@ -2676,6 +2684,15 @@ function bindEvents() {
   $("#issue-drawer-backdrop")?.addEventListener("click", (e) => {
     if (e.target.id === "issue-drawer-backdrop") closeIssueDrawer();
   });
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape") return;
+    if ($("#report-modal")?.classList.contains("open")) closeReportModal();
+    if ($("#issue-drawer-backdrop")?.classList.contains("open")) closeIssueDrawer();
+    if ($("#auth-modal")?.classList.contains("open")) {
+      $("#auth-modal").classList.remove("open");
+      $("#auth-modal").setAttribute("aria-hidden", "true");
+    }
+  });
 
   $("#confirmed-track-btn")?.addEventListener("click", () => {
     closeReportModal();
@@ -2714,7 +2731,9 @@ function bindEvents() {
     btn.textContent = willShow ? copy.pinToggleHide : copy.pinToggle;
     if (willShow) {
       ensureReportPinMap();
-      setTimeout(() => reportPinMap?.invalidateSize(), 90);
+      requestAnimationFrame(() => {
+        setTimeout(() => reportPinMap?.invalidateSize(true), 120);
+      });
     }
   });
 
