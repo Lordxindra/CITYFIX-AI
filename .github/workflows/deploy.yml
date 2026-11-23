@@ -82,7 +82,7 @@ jobs:
             sleep 0.5
           done
 
-          for route in "/" "/index.html" "/app.html" "/street-walk-3d.js" "/three-city.js" "/api/capabilities"; do
+          for route in "/" "/index.html" "/app.html" "/street-walk-3d.js" "/api/capabilities"; do
             code=$(curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:3100${route}")
             echo "${route} -> HTTP ${code}"
             test "$code" = "200"

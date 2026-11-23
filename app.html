@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="theme-color" content="#050912" />
-  <meta name="description" content="CITYFIX AI Smart City Command Center — 3D Jaipur Digital Twin, AI civic issue triage, citizen reporting, and admin operations." />
+  <meta name="description" content="CITYFIX AI Smart City Command Center — Jaipur City Map, 3D Street Explorer, AI civic issue triage, citizen reporting, and admin operations." />
   <title>CITYFIX AI — Smart City Command Center</title>
   <link rel="icon" href="cityfix-logo.svg" type="image/svg+xml" />
   <link rel="manifest" href="manifest.webmanifest" />
@@ -51,10 +51,6 @@
         <button class="nav-item active" data-view="overview" type="button">
           <span class="nav-icon" aria-hidden="true">◫</span>
           <span>Overview</span>
-        </button>
-        <button class="nav-item" data-view="twin" type="button">
-          <span class="nav-icon" aria-hidden="true">❖</span>
-          <span>3D Digital Twin</span>
         </button>
         <button class="nav-item" data-view="explore" type="button">
           <span class="nav-icon" aria-hidden="true">⌖</span>
@@ -107,6 +103,7 @@
           </div>
         </div>
         <div class="top-actions">
+          <button class="secondary-btn lang-btn" id="lang-toggle" type="button" title="Switch between English and Hindi">हिन्दी</button>
           <button class="secondary-btn" id="cloud-auth" type="button">Cloud sign in</button>
           <button class="primary-btn" id="open-report" type="button">+ Report an issue</button>
         </div>
@@ -151,7 +148,6 @@
                 <p>Interactive Jaipur issue distribution (demo coordinates)</p>
               </div>
               <div class="panel-actions">
-                <button class="text-btn" data-goto="twin" type="button">Open 3D Twin →</button>
                 <button class="text-btn" data-goto="explore" type="button">Full Map →</button>
               </div>
             </div>
@@ -198,77 +194,12 @@
         </div>
       </section>
 
-      <!-- VIEW 2: REAL 3D DIGITAL TWIN -->
-      <section class="view" id="view-twin" aria-label="3D Smart City Digital Twin">
-        <div class="twin-header-bar">
-          <div>
-            <h2>Jaipur 3D Digital Twin</h2>
-            <p class="muted">Interactive Procedural 3D City Model (Three.js WebGL · No external GLB asset supplied). Drag to orbit, scroll to zoom, right-drag to pan, click buildings or markers to inspect.</p>
-          </div>
-          <span class="mono-meta" id="twin-status">Initializing 3D viewport…</span>
-        </div>
-
-        <div class="twin-viewport-wrap">
-          <div id="city-3d" class="city-3d-canvas" aria-label="Interactive 3D Jaipur city canvas"></div>
-          <div id="twin-fallback" class="twin-fallback" hidden>
-            <strong>3D WebGL viewport unavailable</strong>
-            <p>Your device or browser suspended WebGL. Use the interactive 2D City Map for full geospatial inspection.</p>
-            <button class="primary-btn" data-goto="explore" type="button">Open 2D City Map</button>
-          </div>
-
-          <!-- Slide-in Inspector Drawer inside 3D stage -->
-          <aside class="twin-inspector" id="twin-inspector" hidden aria-label="3D Selection Inspector">
-            <div class="twin-inspector-head">
-              <span class="mono-meta" id="twin-inspector-kicker">INSPECTOR</span>
-              <button class="close-btn small" id="twin-inspector-close" type="button" aria-label="Close inspector">×</button>
-            </div>
-            <h3 id="twin-inspector-title">Selection</h3>
-            <p class="twin-inspector-sub" id="twin-inspector-sub"></p>
-            <div class="twin-inspector-body" id="twin-inspector-body"></div>
-            <div class="twin-inspector-actions" id="twin-inspector-actions"></div>
-          </aside>
-
-          <!-- Collapsible Bottom Control Dock (Zero Viewport Occlusion) -->
-          <div class="twin-dock-wrap" id="twin-dock-wrap">
-            <button class="twin-dock-toggle" id="twin-dock-toggle" type="button" aria-expanded="true">▾ Hide 3D Controls</button>
-            <div class="twin-dock" id="twin-dock">
-              <div class="dock-group" role="group" aria-label="Camera presets">
-                <button class="dock-btn active" data-camera="overview" type="button">Overview</button>
-                <button class="dock-btn" data-camera="heritage" type="button">Heritage Core</button>
-                <button class="dock-btn" data-camera="civic" type="button">Civic Core</button>
-                <button class="dock-btn" data-camera="topdown" type="button">Top-Down</button>
-              </div>
-              <div class="dock-group">
-                <select id="twin-category-filter" aria-label="Filter 3D markers by category">
-                  <option value="all">All categories</option>
-                  <option value="Road damage">Road damage</option>
-                  <option value="Garbage">Garbage</option>
-                  <option value="Waterlogging">Waterlogging</option>
-                  <option value="Streetlight">Streetlight</option>
-                  <option value="Other">Other</option>
-                </select>
-                <select id="twin-severity-filter" aria-label="Filter 3D markers by severity">
-                  <option value="all">All severities</option>
-                  <option value="Critical">Critical</option>
-                  <option value="High">High</option>
-                  <option value="Normal">Normal</option>
-                </select>
-                <input id="twin-search" type="search" placeholder="Search ward or ID…" aria-label="Search 3D markers by location or ID" />
-              </div>
-              <div class="dock-group">
-                <button class="dock-btn active" id="twin-cluster-toggle" type="button" aria-pressed="true">Clustering: On</button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
       <!-- VIEW 3: INTERACTIVE CITY MAP & ZERO-KEY 3D STREET EXPLORER -->
       <section class="view" id="view-explore" aria-label="Interactive City Map">
         <div class="section-intro">
           <div>
             <h2>Geospatial issue explorer &amp; 3D Street Explorer</h2>
-            <p class="muted">Inspect OpenStreetMap issue layers alongside free 3D OSM Jaipur street buildings, open Panoramax street photos, and our 3D Twin corridor—zero API key required.</p>
+            <p class="muted">Inspect OpenStreetMap issue layers alongside free 3D OSM Jaipur street buildings, open Panoramax street photos, and a 3D Street Fallback—zero API key required.</p>
           </div>
           <div class="map-controls-bar">
             <div class="segmented" role="group" aria-label="Map display mode">
@@ -281,6 +212,7 @@
               <button class="seg-btn" data-mapfilter="open" type="button">Open</button>
               <button class="seg-btn" data-mapfilter="resolved" type="button">Resolved</button>
             </div>
+            <button class="secondary-btn" id="map-hotspot-toggle" type="button" aria-pressed="true">Hotspot rings: On</button>
             <input id="map-search" type="search" placeholder="Search location or title…" aria-label="Search map issues" />
           </div>
         </div>
@@ -304,10 +236,9 @@
                     <small class="tabular" id="streetview-pov-readout">Heading 0° · Tilt 74°</small>
                   </div>
                   <div class="streetview-actions">
-                    <button class="row-action" id="streetview-engine-toggle" type="button" aria-pressed="false" title="Switch between real 3D OpenStreetMap Jaipur buildings and interactive Three.js 3D Twin street">3D Twin Corridor</button>
+                    <button class="row-action" id="streetview-engine-toggle" type="button" aria-pressed="false" title="Switch between real 3D OpenStreetMap Jaipur buildings and interactive Three.js street-level view">3D Street Fallback</button>
                     <button class="row-action" id="streetview-photo-toggle" type="button" aria-pressed="true" hidden>Street Photo</button>
                     <button class="row-action" id="streetview-recenter" type="button">Face target</button>
-                    <button class="row-action" id="streetview-to-twin" type="button">Open City Twin</button>
                   </div>
                 </div>
 
@@ -321,7 +252,7 @@
 
                 <div class="streetview-canvas-wrap">
                   <div id="streetview-pano" class="streetview-pano" aria-label="Interactive 3D OpenStreetMap Jaipur street and building view"></div>
-                  <div id="streetview-twin-pano" class="streetview-pano" hidden aria-label="Interactive Three.js 3D Twin Street-Level View"></div>
+                  <div id="streetview-twin-pano" class="streetview-pano" hidden aria-label="Interactive Three.js 3D Street-Level View"></div>
 
                   <div id="streetview-step-controls" class="streetview-step-controls" aria-label="Street walk navigation controls">
                     <span class="streetview-mode-badge" id="streetview-engine-badge">OPENFREEMAP 3D · NO API KEY</span>
@@ -359,7 +290,7 @@
                     <strong id="streetview-overlay-title">Loading 3D Street Explorer…</strong>
                     <p id="streetview-overlay-msg">Preparing real 3D OpenStreetMap Jaipur buildings and issue markers.</p>
                     <div class="streetview-overlay-actions">
-                      <button class="primary-btn" id="streetview-fallback-twin" type="button">Open 3D Twin Corridor</button>
+                      <button class="primary-btn" id="streetview-fallback-twin" type="button">Open 3D Street Fallback</button>
                       <button class="secondary-btn" id="streetview-fallback-2d" type="button">Back to 2D Map</button>
                     </div>
                   </div>
@@ -583,6 +514,12 @@
             </div>
             <div class="admin-note-bar">
               <input id="admin-audit-note" type="text" maxlength="200" placeholder="Optional audit note for next status transition (e.g. Crew scheduled)…" aria-label="Optional audit note" />
+              <div class="admin-after-photo-row">
+                <label class="admin-photo-label" for="admin-after-photo">Resolution proof photo (optional · JPEG/PNG/WebP ≤ 5 MB):</label>
+                <input id="admin-after-photo" type="file" accept="image/jpeg,image/png,image/webp" />
+                <button class="row-action" id="admin-after-photo-clear" type="button" hidden>Clear photo</button>
+              </div>
+              <div id="admin-after-photo-preview" class="photo-preview"></div>
             </div>
             <div id="admin-priority-queue" class="stack-list"></div>
           </section>
@@ -670,6 +607,11 @@
             <button type="button" class="quick-loc-btn" data-loc="MI Road, Jaipur" data-lat="26.915" data-lon="75.802">MI Road</button>
             <button type="button" class="quick-loc-btn" data-loc="Mansarovar, Jaipur" data-lat="26.854" data-lon="75.764">Mansarovar</button>
             <button type="button" class="quick-loc-btn" data-loc="Malviya Nagar, Jaipur" data-lat="26.854" data-lon="75.805">Malviya Nagar</button>
+            <button type="button" class="quick-loc-btn pin-map-toggle-btn" id="toggle-pin-map" aria-expanded="false">Drop pin on map</button>
+          </div>
+          <div id="report-pin-map-wrap" class="pin-map-wrap" hidden>
+            <div id="report-pin-map" class="pin-map" aria-label="Click map to pin exact issue location"></div>
+            <small class="field-hint">Click anywhere on the Jaipur map to drop or adjust your exact pin.</small>
           </div>
           <small class="field-hint" id="location-coords-hint">Device location is requested only if you click Use GPS.</small>
           <input id="issue-lat" type="hidden" />
@@ -769,7 +711,6 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="supabase/config.js"></script>
   <script src="supabase-client.js"></script>
-  <script type="module" src="three-city.js"></script>
   <script type="module" src="street-walk-3d.js"></script>
   <script src="app.js"></script>
 </body>

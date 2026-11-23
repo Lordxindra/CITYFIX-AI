@@ -25,7 +25,6 @@ jobs:
           node --check landing.js
           node --check supabase-client.js
           node --check supabase/config.js
-          node --experimental-default-type=module --check three-city.js
           node --experimental-default-type=module --check street-walk-3d.js
       - name: Check HTML and local asset references
         run: |
@@ -54,7 +53,6 @@ jobs:
       - name: Verify required project files
         run: |
           test -f server.js
-          test -f three-city.js
           test -f street-walk-3d.js
           test -f cityfix-logo.svg
           test -f landing.css

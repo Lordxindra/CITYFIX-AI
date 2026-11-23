@@ -10,6 +10,8 @@ const $$ = (selector) => [...document.querySelectorAll(selector)];
 const STORAGE_REPORTS = "cityfix_reports_v2";
 const STORAGE_POINTS = "cityfix_points_v2";
 const STORAGE_AUDIT = "cityfix_audit_v2";
+const STORAGE_UPVOTES = "cityfix_upvotes_v2";
+const STORAGE_LANG = "cityfix_lang_v1";
 
 const CATEGORY_MAP_FROM_AI = {
   road_damage: "Road damage",
@@ -89,10 +91,16 @@ const SEED_REPORTS = [
 let reports = loadReports();
 let points = Number(localStorage.getItem(STORAGE_POINTS) || 120);
 let localAuditEvents = loadAuditEvents();
+let upvoteState = loadUpvotes();
+let currentLang = localStorage.getItem(STORAGE_LANG) === "hi" ? "hi" : "en";
 let demoAdminMode = false;
 
 let miniMap = null;
 let fullMap = null;
+let reportPinMap = null;
+let reportPinMarker = null;
+let hotspotLayerGroup = null;
+let showHotspots = true;
 const mapMarkers = { mini: [], full: [] };
 const fullMapLayerGroups = {};
 const MAP_LAYER_CATEGORIES = [
@@ -126,9 +134,8 @@ let currentView = "overview";
 
 let latestAiAssessment = null;
 let lastUploadedDataUrl = null;
+let adminAfterPhotoDataUrl = null;
 let lastConfirmedReportId = null;
-let pending3DFocusId = null;
-let awaiting3DReady = false;
 let capabilitiesPromise = null;
 
 const serverState = {
@@ -208,6 +215,79 @@ function loadAuditEvents() {
       actorLabel: "Demo Reviewer",
     },
   ];
+}
+
+function loadUpvotes() {
+  try {
+    const saved = localStorage.getItem(STORAGE_UPVOTES);
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (parsed && typeof parsed === "object") {
+        return {
+          voted: parsed.voted && typeof parsed.voted === "object" ? parsed.voted : {},
+          extra: parsed.extra && typeof parsed.extra === "object" ? parsed.extra : {},
+        };
+      }
+    }
+  } catch {
+    // ignore storage errors
+  }
+  return { voted: {}, extra: {} };
+}
+
+function saveUpvotes() {
+  try {
+    localStorage.setItem(STORAGE_UPVOTES, JSON.stringify(upvoteState));
+  } catch {
+    // ignore quota errors
+  }
+}
+
+function getUpvoteCount(report) {
+  if (!report) return 0;
+  const base = Math.max(0, Number(report.confirmations) || 0);
+  const delta = Math.max(0, Number(upvoteState.extra[report.id]) || 0);
+  return base + delta;
+}
+
+function hasConfirmedReport(reportId) {
+  return Boolean(upvoteState.voted[reportId]);
+}
+
+function toggleReportConfirmation(reportId, { forceAdd = false } = {}) {
+  const report = reports.find((r) => r.id === reportId);
+  if (!report) return false;
+  const already = hasConfirmedReport(reportId);
+  if (forceAdd && already) {
+    showToast(`Already confirmed ${report.id}`);
+    return false;
+  }
+  if (already) {
+    delete upvoteState.voted[reportId];
+    upvoteState.extra[reportId] = Math.max(0, (Number(upvoteState.extra[reportId]) || 0) - 1);
+    showToast(`Confirmation removed from ${report.id}`);
+  } else {
+    upvoteState.voted[reportId] = true;
+    upvoteState.extra[reportId] = (Number(upvoteState.extra[reportId]) || 0) + 1;
+    showToast(`Confirmed +1 citizen impact on ${report.id}`);
+  }
+  saveUpvotes();
+  renderEverything();
+  return true;
+}
+
+function formatIssueAge(createdAt, status) {
+  if (status === "Resolved") {
+    return currentLang === "hi" ? "हल हो गया" : "Resolved";
+  }
+  if (!createdAt) return "";
+  const ts = Date.parse(createdAt);
+  if (!Number.isFinite(ts)) return "";
+  const hours = Math.max(0, Math.floor((Date.now() - ts) / 3600000));
+  if (hours < 1) return currentLang === "hi" ? "अभी दर्ज" : "Just now";
+  if (hours < 24) return currentLang === "hi" ? `${hours} घंटे से खुला` : `${hours}h open`;
+  const days = Math.floor(hours / 24);
+  return currentLang === "hi" ? `${days} दिन से खुला` : `${days}d open`;
 }
 
 function saveData() {
@@ -327,7 +407,7 @@ function updateEnvironmentUI() {
     if (!serverState.checked) {
       aiText.textContent = "Checking server AI status…";
     } else if (serverState.aiConfigured) {
-      aiText.textContent = `AI triage ready (${serverState.model}) · Street View: 100% Free OSM 3D + Twin`;
+      aiText.textContent = `AI triage ready (${serverState.model}) · Street View: Free OSM 3D + Fallback`;
     } else {
       aiText.textContent = "Zero-API Mode: Rule & local photo triage + Free OSM 3D Street View active";
     }
@@ -415,7 +495,7 @@ function renderBarChart(containerSelector, entries, totalCount, colorOverride = 
 function renderPriorityList() {
   const sorted = [...reports]
     .filter((r) => r.status !== "Resolved")
-    .sort((a, b) => priorityRank(b.priority) - priorityRank(a.priority));
+    .sort((a, b) => (priorityRank(b.priority) - priorityRank(a.priority)) || (getUpvoteCount(b) - getUpvoteCount(a)));
 
   const container = $("#priority-list");
   if (!sorted.length) {
@@ -425,20 +505,22 @@ function renderPriorityList() {
 
   container.innerHTML = sorted
     .slice(0, 5)
-    .map(
-      (r) => `
+    .map((r) => {
+      const conf = getUpvoteCount(r);
+      const age = formatIssueAge(r.createdAt, r.status);
+      return `
       <button class="list-item" type="button" data-inspect="${escapeHTML(r.id)}">
         <div class="list-item-copy">
           <strong>${escapeHTML(r.title)}</strong>
-          <small>${escapeHTML(r.location)} · ${escapeHTML(r.id)}</small>
+          <small>${escapeHTML(r.location)} · ${escapeHTML(r.id)}${age ? ` · <span class="age-tag">${escapeHTML(age)}</span>` : ""}${conf > 0 ? ` · <span class="upvote-count">+${conf}</span>` : ""}</small>
         </div>
         <div class="list-item-meta">
           <span class="severity-text ${severityClass(r.priority)}">${escapeHTML(r.priority)}</span>
           <small class="muted">${escapeHTML(r.category)}</small>
         </div>
       </button>
-    `
-    )
+    `;
+    })
     .join("");
 }
 
@@ -451,20 +533,21 @@ function renderRecentActivity() {
 
   container.innerHTML = reports
     .slice(0, 5)
-    .map(
-      (r) => `
+    .map((r) => {
+      const conf = getUpvoteCount(r);
+      return `
       <button class="list-item" type="button" data-inspect="${escapeHTML(r.id)}">
         <div class="list-item-copy">
           <strong>${escapeHTML(r.title)}</strong>
-          <small>${escapeHTML(r.location)} · ${escapeHTML(r.date)}</small>
+          <small>${escapeHTML(r.location)} · ${escapeHTML(r.date)}${conf > 0 ? ` · <span class="upvote-count">+${conf} confirmed</span>` : ""}</small>
         </div>
         <div class="list-item-meta">
           <span class="status-text ${statusClass(r.status)}">${escapeHTML(r.status)}</span>
           <small class="id-label">${escapeHTML(r.id)}</small>
         </div>
       </button>
-    `
-    )
+    `;
+    })
     .join("");
 }
 
@@ -539,12 +622,16 @@ function renderTable() {
 
   const tbody = $("#reports-body");
   tbody.innerHTML = filtered
-    .map(
-      (r) => `
+    .map((r) => {
+      const conf = getUpvoteCount(r);
+      const age = formatIssueAge(r.createdAt, r.status);
+      return `
       <tr data-inspect="${escapeHTML(r.id)}">
         <td>
           <strong>${escapeHTML(r.title)}</strong><br>
           <span class="id-label">${escapeHTML(r.id)}</span>
+          ${age ? ` <span class="age-tag">· ${escapeHTML(age)}</span>` : ""}
+          ${conf > 0 ? ` <span class="upvote-count">· +${conf}</span>` : ""}
         </td>
         <td>${escapeHTML(r.location)}</td>
         <td>${escapeHTML(r.category)}</td>
@@ -560,8 +647,8 @@ function renderTable() {
           }
         </td>
       </tr>
-    `
-    )
+    `;
+    })
     .join("");
 
   $("#empty-state").hidden = filtered.length > 0;
@@ -591,6 +678,7 @@ function initializeMap(selector, center, zoom) {
     maxZoom: 19,
   }).addTo(map);
   if (selector === "#full-map") {
+    hotspotLayerGroup = L.layerGroup().addTo(map);
     MAP_LAYER_CATEGORIES.forEach(({ key }) => {
       fullMapLayerGroups[key] = L.layerGroup().addTo(map);
     });
@@ -858,6 +946,69 @@ function drawMarkers(map, mapType, list, filteredActiveList = list) {
     ).length;
     $("#map-total").textContent = `${placed} pinned on map (${filteredActiveList.length} matching filters)`;
   }
+
+  renderHotspotRings(filteredActiveList);
+}
+
+function renderHotspotRings(list) {
+  if (!fullMap || !hotspotLayerGroup || !window.L) return;
+  hotspotLayerGroup.clearLayers();
+
+  const toggleBtn = $("#map-hotspot-toggle");
+  if (toggleBtn) {
+    toggleBtn.setAttribute("aria-pressed", String(showHotspots));
+    toggleBtn.classList.toggle("active", showHotspots);
+    toggleBtn.textContent = showHotspots ? "Hotspot rings: On" : "Hotspot rings: Off";
+  }
+
+  if (!showHotspots) {
+    if (fullMap.hasLayer(hotspotLayerGroup)) fullMap.removeLayer(hotspotLayerGroup);
+    return;
+  }
+  if (!fullMap.hasLayer(hotspotLayerGroup)) hotspotLayerGroup.addTo(fullMap);
+
+  const openPinned = (list || []).filter(
+    (r) => r.status !== "Resolved" && Number.isFinite(Number(r.lat)) && Number.isFinite(Number(r.lon))
+  );
+
+  const clusters = [];
+  openPinned.forEach((report) => {
+    const lat = Number(report.lat);
+    const lon = Number(report.lon);
+    const hit = clusters.find((c) => Math.hypot(c.lat - lat, c.lon - lon) < 0.015);
+    if (hit) {
+      hit.items.push(report);
+      hit.lat = hit.items.reduce((sum, item) => sum + Number(item.lat), 0) / hit.items.length;
+      hit.lon = hit.items.reduce((sum, item) => sum + Number(item.lon), 0) / hit.items.length;
+      if (priorityRank(report.priority) > hit.maxRank) hit.maxRank = priorityRank(report.priority);
+    } else {
+      clusters.push({
+        lat,
+        lon,
+        items: [report],
+        maxRank: priorityRank(report.priority),
+      });
+    }
+  });
+
+  clusters.forEach((cluster) => {
+    const count = cluster.items.length;
+    const color = cluster.maxRank >= 3 ? "#f43f5e" : cluster.maxRank >= 2 ? "#f59e0b" : "#38bdf8";
+    const ward = String(cluster.items[0].location || "Jaipur").split(",")[0].trim();
+    const ring = L.circle([cluster.lat, cluster.lon], {
+      radius: 420 + count * 180,
+      color,
+      fillColor: color,
+      fillOpacity: 0.14,
+      weight: 1.4,
+      dashArray: "5 5",
+    });
+    ring.bindTooltip(
+      `${count} open issue${count === 1 ? "" : "s"} near ${escapeHTML(ward)}`,
+      { direction: "top" }
+    );
+    ring.addTo(hotspotLayerGroup);
+  });
 }
 
 function renderMapSyncList(list) {
@@ -875,12 +1026,14 @@ function renderMapSyncList(list) {
   container.innerHTML = list
     .map((r) => {
       const hasCoords = Number.isFinite(Number(r.lat)) && Number.isFinite(Number(r.lon));
+      const conf = getUpvoteCount(r);
+      const age = formatIssueAge(r.createdAt, r.status);
       return `
         <div class="sync-queue-card">
           <button class="list-item" type="button" data-map-focus="${escapeHTML(r.id)}">
             <div class="list-item-copy">
               <strong>${escapeHTML(r.title)}</strong>
-              <small>${escapeHTML(r.location)}${hasCoords ? "" : " (no GPS pin)"}</small>
+              <small>${escapeHTML(r.location)}${hasCoords ? "" : " (no GPS pin)"}${age ? ` · <span class="age-tag">${escapeHTML(age)}</span>` : ""}${conf > 0 ? ` · <span class="upvote-count">+${conf}</span>` : ""}</small>
             </div>
             <div class="list-item-meta">
               <span class="severity-text ${severityClass(r.priority)}">${escapeHTML(r.priority)}</span>
@@ -1206,11 +1359,11 @@ function syncStreetViewEngineUI() {
   if (engineBtn) {
     engineBtn.setAttribute("aria-pressed", String(isProc));
     engineBtn.classList.toggle("active", isProc);
-    engineBtn.textContent = isProc ? "3D OSM Streets (Free)" : "3D Twin Corridor";
+    engineBtn.textContent = isProc ? "3D OSM Streets (Free)" : "3D Street Fallback";
   }
 
   if (badgeEl) {
-    badgeEl.textContent = isProc ? "THREE.JS 3D TWIN · NO API KEY" : "OPENFREEMAP 3D · NO API KEY";
+    badgeEl.textContent = isProc ? "THREE.JS 3D STREET · NO API KEY" : "OPENFREEMAP 3D · NO API KEY";
   }
 
   renderPanoramaxPhoto();
@@ -1277,7 +1430,7 @@ function activateProceduralStreetView(target, reasonNote) {
 
   if ($("#streetview-coverage-note")) {
     $("#streetview-coverage-note").textContent =
-      reasonNote || "3D Twin Street Corridor (Zero API Key · Works Offline) · Drag 360° & walk street";
+      reasonNote || "3D Street Fallback (Zero API Key · Works Offline) · Drag 360° & walk street";
   }
 
   if (!window.CityFixStreet3D) {
@@ -1328,7 +1481,7 @@ async function loadStreetViewAtLocation(target) {
   if (streetViewState.manualProcedural) {
     activateProceduralStreetView(
       streetViewState.activeTarget,
-      "3D Twin Street Corridor (Zero API Key · Offline Ready) · Drag 360° & walk street"
+      "3D Street Fallback (Zero API Key · Offline Ready) · Drag 360° & walk street"
     );
     return;
   }
@@ -1362,7 +1515,7 @@ async function loadStreetViewAtLocation(target) {
     if (seq !== streetViewState.requestSeq) return;
     activateProceduralStreetView(
       streetViewState.activeTarget,
-      "3D Twin Street Corridor (Zero API Key · Offline Fallback) · Drag 360° & walk street"
+      "3D Street Fallback (Zero API Key · Offline Fallback) · Drag 360° & walk street"
     );
   }
 }
@@ -1438,136 +1591,6 @@ function openStreetViewForReport(report, { ensureVisibleMode = false } = {}) {
 }
 
 // =========================================================
-// 3D DIGITAL TWIN INTEGRATION
-// =========================================================
-
-function showTwinInspector(title, kicker, sub, rows, actionsHtml) {
-  const panel = $("#twin-inspector");
-  if (!panel) return;
-  $("#twin-inspector-kicker").textContent = kicker;
-  $("#twin-inspector-title").textContent = title;
-  $("#twin-inspector-sub").textContent = sub;
-  $("#twin-inspector-body").innerHTML = rows;
-  $("#twin-inspector-actions").innerHTML = actionsHtml;
-  panel.hidden = false;
-}
-
-function init3DTwinView() {
-  const fallbackEl = $("#twin-fallback");
-  const statusEl = $("#twin-status");
-
-  if (!window.CityFix3D) {
-    if (statusEl) statusEl.textContent = "Loading Three.js 3D engine…";
-    if (!awaiting3DReady) {
-      awaiting3DReady = true;
-      window.addEventListener(
-        "cityfix:3d-ready",
-        () => {
-          awaiting3DReady = false;
-          if (currentView === "twin") init3DTwinView();
-        },
-        { once: true }
-      );
-    }
-    return;
-  }
-
-  const ok = window.CityFix3D.initThreeCity({
-    containerId: "city-3d",
-    reports,
-    onReady: (info) => {
-      if (fallbackEl) fallbackEl.hidden = true;
-      if (statusEl) {
-        statusEl.textContent = `Procedural Jaipur 3D Twin · ${info.buildingCount} urban blocks active`;
-      }
-      if (pending3DFocusId) {
-        const focusId = pending3DFocusId;
-        pending3DFocusId = null;
-        window.CityFix3D?.focusReport(focusId);
-      }
-    },
-    onError: (msg) => {
-      if (fallbackEl) fallbackEl.hidden = false;
-      if (statusEl) statusEl.textContent = msg;
-    },
-    onSelectIssue: (report) => {
-      const body = `
-        <div><strong>Category:</strong> ${escapeHTML(report.category)}</div>
-        <div><strong>Severity:</strong> <span class="severity-text ${severityClass(report.priority)}">${escapeHTML(report.priority)}</span></div>
-        <div><strong>Status:</strong> <span class="status-text ${statusClass(report.status)}">${escapeHTML(report.status)}</span></div>
-        <div><strong>Date:</strong> ${escapeHTML(report.date)}</div>
-        <div>${escapeHTML(report.description || "No description provided.")}</div>
-        ${
-          report.aiAssessment
-            ? `<div><strong>AI note:</strong> ${escapeHTML(report.aiAssessment.summary || "")}</div>`
-            : ""
-        }
-      `;
-      const actions = `
-        <button class="primary-btn" type="button" id="twin-open-full-issue">Inspect full record</button>
-      `;
-      showTwinInspector(
-        report.title,
-        `ISSUE · ${report.id}`,
-        report.location,
-        body,
-        actions
-      );
-      $("#twin-open-full-issue")?.addEventListener("click", () => {
-        openIssueDrawer(report.id);
-      });
-    },
-    onSelectBuilding: (info) => {
-      if (info.isClusterExpand) {
-        const toggleBtn = $("#twin-cluster-toggle");
-        if (toggleBtn) {
-          toggleBtn.classList.remove("active");
-          toggleBtn.setAttribute("aria-pressed", "false");
-          toggleBtn.textContent = "Clustering: Off";
-        }
-        showToast(`Expanded ${info.count} clustered issues`);
-        return;
-      }
-      const nearby = info.nearbyReports || [];
-      const body = `
-        <div><strong>District:</strong> ${escapeHTML(info.district)}</div>
-        <div><strong>Height:</strong> ~${escapeHTML(info.heightMeters)} m (${escapeHTML(info.floors)} floors)</div>
-        <div><strong>Nearby recorded issues:</strong> ${nearby.length}</div>
-        ${
-          nearby.length
-            ? nearby
-                .slice(0, 3)
-                .map((r) => `<div>• ${escapeHTML(r.id)}: ${escapeHTML(r.title)}</div>`)
-                .join("")
-            : "<div>No recorded issues in this immediate district block.</div>"
-        }
-      `;
-      const actions = `
-        <button class="secondary-btn" type="button" id="twin-report-here">Report issue in ${escapeHTML(info.district)}</button>
-      `;
-      showTwinInspector(
-        info.name,
-        "URBAN BLOCK · PROCEDURAL",
-        info.zoneKind,
-        body,
-        actions
-      );
-      $("#twin-report-here")?.addEventListener("click", () => {
-        openReportModal({
-          location: `${info.district}, Jaipur`,
-          lat: info.lat,
-          lon: info.lon,
-        });
-      });
-    },
-  });
-
-  if (!ok && fallbackEl) {
-    fallbackEl.hidden = false;
-  }
-}
-
-// =========================================================
 // ADMIN CONSOLE & EXPORTS
 // =========================================================
 
@@ -1606,17 +1629,21 @@ function renderAdminConsole() {
   }
 
   // Priority queue for admin actions
-  const ordered = [...reports].sort((a, b) => priorityRank(b.priority) - priorityRank(a.priority));
+  const ordered = [...reports].sort(
+    (a, b) => (priorityRank(b.priority) - priorityRank(a.priority)) || (getUpvoteCount(b) - getUpvoteCount(a))
+  );
   const allowed = canMutateStatus();
   queueContainer.innerHTML = ordered.length
     ? ordered
-        .map(
-          (r) => `
+        .map((r) => {
+          const conf = getUpvoteCount(r);
+          const age = formatIssueAge(r.createdAt, r.status);
+          return `
       <div class="admin-queue-row">
         <div class="admin-queue-top">
           <div>
             <strong>${escapeHTML(r.title)}</strong>
-            <div class="muted">${escapeHTML(r.id)} · ${escapeHTML(r.location)} · ${escapeHTML(r.category)}</div>
+            <div class="muted">${escapeHTML(r.id)} · ${escapeHTML(r.location)} · ${escapeHTML(r.category)}${age ? ` · <span class="age-tag">${escapeHTML(age)}</span>` : ""}${conf > 0 ? ` · <span class="upvote-count">+${conf} confirmed</span>` : ""}</div>
           </div>
           <div class="list-item-meta">
             <span class="severity-text ${severityClass(r.priority)}">${escapeHTML(r.priority)}</span>
@@ -1630,8 +1657,8 @@ function renderAdminConsole() {
           <button class="row-action" type="button" data-set-status="Resolved" data-id="${escapeHTML(r.id)}" ${allowed ? "" : "disabled"}>Resolve</button>
         </div>
       </div>
-    `
-        )
+    `;
+        })
         .join("")
     : '<p class="muted">No reports in queue.</p>';
 
@@ -1672,7 +1699,16 @@ async function updateReportStatus(reportId, nextStatus) {
   const report = reports.find((r) => r.id === reportId);
   if (!report || report.status === nextStatus) return;
 
-  const note = ($("#admin-audit-note")?.value || "").trim() || "Status updated via Command Center";
+  const attachedProof =
+    nextStatus === "Resolved" && isSafeImageUrl(adminAfterPhotoDataUrl)
+      ? adminAfterPhotoDataUrl
+      : null;
+  const rawNote = ($("#admin-audit-note")?.value || "").trim();
+  const note =
+    rawNote ||
+    (attachedProof
+      ? "Resolved with after-photo proof via Command Center"
+      : "Status updated via Command Center");
   const oldStatus = report.status;
 
   if (cloudState.configured && report.dbId) {
@@ -1698,6 +1734,13 @@ async function updateReportStatus(reportId, nextStatus) {
   }
 
   report.status = nextStatus;
+  if (attachedProof) {
+    report.afterPhotoDataUrl = attachedProof;
+    adminAfterPhotoDataUrl = null;
+    if ($("#admin-after-photo")) $("#admin-after-photo").value = "";
+    if ($("#admin-after-photo-preview")) $("#admin-after-photo-preview").innerHTML = "";
+    if ($("#admin-after-photo-clear")) $("#admin-after-photo-clear").hidden = true;
+  }
   saveData();
   if ($("#admin-audit-note")) $("#admin-audit-note").value = "";
   renderEverything();
@@ -1771,7 +1814,23 @@ async function openIssueDrawer(reportId) {
 
   const body = $("#drawer-body");
   let photoHtml = "";
-  if (isSafeImageUrl(report.photoDataUrl)) {
+  if (isSafeImageUrl(report.afterPhotoDataUrl)) {
+    const beforeBlock = isSafeImageUrl(report.photoDataUrl)
+      ? `<img class="drawer-photo" src="${report.photoDataUrl}" alt="Before resolution issue photo" />`
+      : `<div class="muted" style="padding:12px;border:1px dashed var(--line);border-radius:8px;font-size:12px;">No initial citizen photo attached</div>`;
+    photoHtml = `
+      <div class="drawer-photo-compare">
+        <div class="drawer-photo-card">
+          <span>BEFORE (REPORTED)</span>
+          ${beforeBlock}
+        </div>
+        <div class="drawer-photo-card">
+          <span>AFTER (RESOLVED)</span>
+          <img class="drawer-photo" src="${report.afterPhotoDataUrl}" alt="After resolution proof photo" />
+        </div>
+      </div>
+    `;
+  } else if (isSafeImageUrl(report.photoDataUrl)) {
     photoHtml = `<img class="drawer-photo" src="${report.photoDataUrl}" alt="Submitted issue evidence" />`;
   } else if (report.photoPath && isCloudWriteActive()) {
     photoHtml = `<div id="drawer-cloud-photo" class="muted">Loading private photo…</div>`;
@@ -1813,6 +1872,10 @@ async function openIssueDrawer(reportId) {
         .join("")
     : `<p class="muted">Initial submission recorded (${escapeHTML(report.date)}). No subsequent status transitions yet.</p>`;
 
+  const confCount = getUpvoteCount(report);
+  const confirmed = hasConfirmedReport(report.id);
+  const ageLabel = formatIssueAge(report.createdAt, report.status);
+
   body.innerHTML = `
     ${photoHtml}
     <div class="drawer-section">
@@ -1824,6 +1887,8 @@ async function openIssueDrawer(reportId) {
         <div class="permission-row"><span>Location</span><strong>${escapeHTML(report.location)}</strong></div>
         <div class="permission-row"><span>Coordinates</span><strong class="tabular">${Number.isFinite(Number(report.lat)) ? `${Number(report.lat).toFixed(4)}, ${Number(report.lon).toFixed(4)}` : "Not pinned"}</strong></div>
         <div class="permission-row"><span>Date</span><strong>${escapeHTML(report.date)}</strong></div>
+        ${ageLabel ? `<div class="permission-row"><span>Duration</span><strong class="tabular">${escapeHTML(ageLabel)}</strong></div>` : ""}
+        <div class="permission-row"><span>Citizen confirmations</span><strong class="tabular" id="drawer-confirm-count">${confCount}</strong></div>
       </div>
     </div>
     <div class="drawer-section">
@@ -1836,19 +1901,47 @@ async function openIssueDrawer(reportId) {
       <div class="stack-list">${timelineHtml}</div>
     </div>
     <div class="confirm-actions">
-      <button class="secondary-btn" type="button" id="drawer-focus-3d">Focus in 3D Twin</button>
+      <button class="secondary-btn ${confirmed ? "active" : ""}" type="button" id="drawer-upvote-btn" aria-pressed="${confirmed}">${confirmed ? "Confirmed ✓" : "Confirm same issue (+1)"} (${confCount})</button>
+      <button class="secondary-btn" type="button" id="drawer-copy-link">Copy tracking link</button>
       <button class="secondary-btn" type="button" id="drawer-focus-map">View on 2D Map</button>
       <button class="primary-btn" type="button" id="drawer-focus-streetview">Live 3D Street View</button>
     </div>
   `;
 
-  $("#drawer-focus-3d")?.addEventListener("click", () => {
-    closeIssueDrawer();
-    pending3DFocusId = report.id;
-    navigate("twin");
-    if (window.CityFix3D?.isInitialized) {
-      pending3DFocusId = null;
-      window.CityFix3D.focusReport(report.id);
+  $("#drawer-upvote-btn")?.addEventListener("click", () => {
+    toggleReportConfirmation(report.id);
+    const updatedCount = getUpvoteCount(report);
+    const updatedState = hasConfirmedReport(report.id);
+    const btn = $("#drawer-upvote-btn");
+    if (btn) {
+      btn.classList.toggle("active", updatedState);
+      btn.setAttribute("aria-pressed", String(updatedState));
+      btn.textContent = `${updatedState ? "Confirmed ✓" : "Confirm same issue (+1)"} (${updatedCount})`;
+    }
+    if ($("#drawer-confirm-count")) {
+      $("#drawer-confirm-count").textContent = String(updatedCount);
+    }
+  });
+
+  $("#drawer-copy-link")?.addEventListener("click", async () => {
+    const shareUrl = `${window.location.origin}${window.location.pathname}#track=${encodeURIComponent(report.id)}`;
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(shareUrl);
+      } else {
+        const tmp = document.createElement("textarea");
+        tmp.value = shareUrl;
+        tmp.setAttribute("readonly", "");
+        tmp.style.position = "fixed";
+        tmp.style.opacity = "0";
+        document.body.appendChild(tmp);
+        tmp.select();
+        document.execCommand("copy");
+        tmp.remove();
+      }
+      showToast(`Tracking link copied for ${report.id}`);
+    } catch {
+      showToast(`Tracking code: #track=${report.id}`);
     }
   });
 
@@ -1929,9 +2022,18 @@ function renderDuplicateAlert(candidates) {
     return;
   }
   box.hidden = false;
-  box.innerHTML = `<strong>Possible duplicate report(s) nearby:</strong> ${candidates
-    .map((c) => `${escapeHTML(c.id)} — ${escapeHTML(c.title)} (${escapeHTML(c.location)})`)
-    .join(" · ")}`;
+  box.innerHTML = `
+    <div><strong>Possible duplicate report(s) nearby:</strong> ${candidates
+      .map((c) => `${escapeHTML(c.id)} — ${escapeHTML(c.title)} (${escapeHTML(c.location)})`)
+      .join(" · ")}</div>
+    <div class="duplicate-actions">
+      ${candidates
+        .map(
+          (c) => `<button type="button" class="duplicate-confirm-btn" data-confirm-duplicate="${escapeHTML(c.id)}">Confirm ${escapeHTML(c.id)} (+1) instead →</button>`
+        )
+        .join("")}
+    </div>
+  `;
 }
 
 function runLocalRuleTriage() {
@@ -2174,15 +2276,89 @@ async function handleTextAiAnalysis() {
 // REPORT SUBMISSION WORKFLOW
 // =========================================================
 
+function setReportPinCoords(lat, lon, { label = null, updateInputIfEmpty = false } = {}) {
+  const numLat = Number(lat);
+  const numLon = Number(lon);
+  if (!Number.isFinite(numLat) || !Number.isFinite(numLon)) return;
+  $("#issue-lat").value = numLat.toFixed(5);
+  $("#issue-lon").value = numLon.toFixed(5);
+  if (label && $("#issue-location")) {
+    $("#issue-location").value = label;
+  } else if (updateInputIfEmpty && $("#issue-location") && !$("#issue-location").value.trim()) {
+    $("#issue-location").value = `Pinned Jaipur location (${numLat.toFixed(4)}, ${numLon.toFixed(4)})`;
+  }
+  if ($("#location-coords-hint")) {
+    $("#location-coords-hint").textContent = `Coordinates pinned (${numLat.toFixed(4)}, ${numLon.toFixed(4)}).`;
+  }
+  $$(".quick-loc-btn:not(#toggle-pin-map)").forEach((b) => {
+    const match = label ? b.dataset.loc === label : false;
+    b.classList.toggle("active", match);
+  });
+  if (reportPinMap && window.L) {
+    if (!reportPinMarker) {
+      reportPinMarker = L.circleMarker([numLat, numLon], {
+        radius: 8,
+        color: "#38bdf8",
+        fillColor: "#38bdf8",
+        fillOpacity: 0.9,
+        weight: 2,
+      }).addTo(reportPinMap);
+    } else {
+      reportPinMarker.setLatLng([numLat, numLon]);
+    }
+    reportPinMap.setView([numLat, numLon], Math.max(reportPinMap.getZoom(), 13));
+  }
+}
+
+function ensureReportPinMap() {
+  const el = $("#report-pin-map");
+  if (!el || !window.L) return null;
+  if (!reportPinMap) {
+    reportPinMap = L.map(el, { scrollWheelZoom: true }).setView([26.9124, 75.7873], 12);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      attribution: "&copy; OpenStreetMap contributors",
+      maxZoom: 19,
+    }).addTo(reportPinMap);
+    reportPinMap.on("click", (ev) => {
+      setReportPinCoords(ev.latlng.lat, ev.latlng.lng, { updateInputIfEmpty: true });
+      runLocalRuleTriage();
+    });
+  }
+  const lat = Number($("#issue-lat")?.value);
+  const lon = Number($("#issue-lon")?.value);
+  if (Number.isFinite(lat) && Number.isFinite(lon) && lat !== 0 && lon !== 0) {
+    setReportPinCoords(lat, lon);
+  }
+  return reportPinMap;
+}
+
+function resetReportPinPicker() {
+  const wrap = $("#report-pin-map-wrap");
+  const toggleBtn = $("#toggle-pin-map");
+  if (wrap) wrap.hidden = true;
+  if (toggleBtn) {
+    toggleBtn.setAttribute("aria-expanded", "false");
+    toggleBtn.classList.remove("active");
+    toggleBtn.textContent = currentLang === "hi" ? "मैप पर पिन लगाएँ" : "Drop pin on map";
+  }
+  if (reportPinMarker) {
+    reportPinMarker.remove();
+    reportPinMarker = null;
+  }
+  $$(".quick-loc-btn:not(#toggle-pin-map)").forEach((b) => b.classList.remove("active"));
+}
+
 function openReportModal(prefill = null) {
   $("#report-form").hidden = false;
   $("#report-confirmation").hidden = true;
   $("#upload-progress").hidden = true;
   $("#duplicate-alert").hidden = true;
+  resetReportPinPicker();
 
   if (prefill?.location) $("#issue-location").value = prefill.location;
-  if (prefill?.lat) $("#issue-lat").value = prefill.lat;
-  if (prefill?.lon) $("#issue-lon").value = prefill.lon;
+  if (prefill?.lat && prefill?.lon) {
+    setReportPinCoords(prefill.lat, prefill.lon, { label: prefill.location || null });
+  }
 
   $("#report-modal").classList.add("open");
   $("#report-modal").setAttribute("aria-hidden", "false");
@@ -2307,6 +2483,10 @@ async function submitReport(event) {
     $("#photo-preview").innerHTML = "";
     $("#issue-lat").value = "";
     $("#issue-lon").value = "";
+    if ($("#location-coords-hint")) {
+      $("#location-coords-hint").textContent = "Device location is requested only if you click Use GPS.";
+    }
+    resetReportPinPicker();
     lastUploadedDataUrl = null;
     latestAiAssessment = null;
 
@@ -2322,11 +2502,92 @@ async function submitReport(event) {
 }
 
 // =========================================================
-// NAVIGATION & GLOBAL EVENTS
+// LANGUAGE (EN / HI), NAVIGATION & GLOBAL EVENTS
 // =========================================================
 
+const UI_TRANSLATIONS = {
+  en: {
+    titles: {
+      overview: "City overview",
+      explore: "City map",
+      reports: "Issue reports",
+      impact: "Analytics & impact",
+      admin: "Admin console",
+    },
+    nav: {
+      overview: "Overview",
+      explore: "City Map",
+      reports: "Issue Reports",
+      impact: "Analytics & Impact",
+      admin: "Admin Console",
+    },
+    reportBtn: "+ Report an issue",
+    reportBtn2: "+ New report",
+    stats: ["Open issues", "Resolved", "High & critical", "Resolution rate"],
+    modalTitle: "Report a civic issue",
+    submitBtn: "Submit issue report",
+    pinToggle: "Drop pin on map",
+    pinToggleHide: "Hide pin map",
+    langToggle: "हिन्दी",
+  },
+  hi: {
+    titles: {
+      overview: "शहर अवलोकन",
+      explore: "जयपुर सिटी मैप",
+      reports: "नागरिक शिकायतें",
+      impact: "विश्लेषण और प्रभाव",
+      admin: "एडमिन कंसोल",
+    },
+    nav: {
+      overview: "अवलोकन",
+      explore: "सिटी मैप",
+      reports: "शिकायत रिपोर्ट",
+      impact: "विश्लेषण",
+      admin: "एडमिन कंसोल",
+    },
+    reportBtn: "+ समस्या दर्ज करें",
+    reportBtn2: "+ नई शिकायत",
+    stats: ["खुली समस्याएँ", "समाधान हो चुके", "उच्च एवं गंभीर", "समाधान दर"],
+    modalTitle: "नागरिक समस्या दर्ज करें",
+    submitBtn: "शिकायत सबमिट करें",
+    pinToggle: "मैप पर पिन लगाएँ",
+    pinToggleHide: "पिन मैप छिपाएँ",
+    langToggle: "English",
+  },
+};
+
+function applyLanguage(lang) {
+  currentLang = lang === "hi" ? "hi" : "en";
+  localStorage.setItem(STORAGE_LANG, currentLang);
+  document.documentElement.lang = currentLang;
+  const copy = UI_TRANSLATIONS[currentLang];
+
+  $$(".nav-item").forEach((btn) => {
+    const labelSpan = btn.querySelector("span:not(.nav-icon)");
+    const key = btn.dataset.view;
+    if (labelSpan && copy.nav[key]) labelSpan.textContent = copy.nav[key];
+  });
+
+  if ($("#page-title")) $("#page-title").textContent = copy.titles[currentView] || copy.titles.overview;
+  if ($("#open-report")) $("#open-report").textContent = copy.reportBtn;
+  if ($("#open-report-2")) $("#open-report-2").textContent = copy.reportBtn2;
+  if ($("#report-modal-title")) $("#report-modal-title").textContent = copy.modalTitle;
+  if ($("#submit-report-btn")) $("#submit-report-btn").textContent = copy.submitBtn;
+  if ($("#lang-toggle")) $("#lang-toggle").textContent = copy.langToggle;
+
+  $$("#view-overview .stat-label").forEach((el, idx) => {
+    if (copy.stats[idx]) el.textContent = copy.stats[idx];
+  });
+
+  const pinToggle = $("#toggle-pin-map");
+  const pinWrap = $("#report-pin-map-wrap");
+  if (pinToggle && pinWrap) {
+    pinToggle.textContent = pinWrap.hidden ? copy.pinToggle : copy.pinToggleHide;
+  }
+}
+
 function navigate(view) {
-  const validViews = ["overview", "twin", "explore", "reports", "impact", "admin"];
+  const validViews = ["overview", "explore", "reports", "impact", "admin"];
   const target = validViews.includes(view) ? view : "overview";
   currentView = target;
 
@@ -2337,25 +2598,12 @@ function navigate(view) {
     btn.classList.toggle("active", btn.dataset.view === target);
   });
 
-  const titles = {
-    overview: "City overview",
-    twin: "3D Digital Twin",
-    explore: "City map",
-    reports: "Issue reports",
-    impact: "Analytics & impact",
-    admin: "Admin console",
-  };
-  $("#page-title").textContent = titles[target] || "Command center";
+  const copy = UI_TRANSLATIONS[currentLang] || UI_TRANSLATIONS.en;
+  $("#page-title").textContent = copy.titles[target] || "Command center";
 
   // Close mobile sidebar
   $("#sidebar")?.classList.remove("open");
   $("#sidebar-overlay")?.classList.remove("open");
-
-  if (target === "twin") {
-    setTimeout(init3DTwinView, 50);
-  } else if (window.CityFix3D?.isInitialized) {
-    window.CityFix3D.setPaused(true);
-  }
 
   if (target === "overview" && miniMap) {
     setTimeout(() => miniMap.invalidateSize(), 150);
@@ -2383,9 +2631,6 @@ function renderEverything() {
   renderTable();
   renderMaps();
   renderAdminConsole();
-  if (window.CityFix3D?.isInitialized) {
-    window.CityFix3D.updateReports(reports);
-  }
 }
 
 function bindEvents() {
@@ -2450,14 +2695,43 @@ function bindEvents() {
   $("#issue-description")?.addEventListener("input", runLocalRuleTriage);
   $("#issue-safety")?.addEventListener("change", runLocalRuleTriage);
 
-  $$(".quick-loc-btn").forEach((btn) => {
+  $$(".quick-loc-btn:not(#toggle-pin-map)").forEach((btn) => {
     btn.addEventListener("click", () => {
-      $("#issue-location").value = btn.dataset.loc;
-      $("#issue-lat").value = btn.dataset.lat;
-      $("#issue-lon").value = btn.dataset.lon;
-      $("#location-coords-hint").textContent = `District coordinates pinned (${btn.dataset.lat}, ${btn.dataset.lon}).`;
+      setReportPinCoords(btn.dataset.lat, btn.dataset.lon, { label: btn.dataset.loc });
       runLocalRuleTriage();
     });
+  });
+
+  $("#toggle-pin-map")?.addEventListener("click", () => {
+    const wrap = $("#report-pin-map-wrap");
+    const btn = $("#toggle-pin-map");
+    if (!wrap || !btn) return;
+    const willShow = wrap.hidden;
+    wrap.hidden = !willShow;
+    btn.setAttribute("aria-expanded", String(willShow));
+    btn.classList.toggle("active", willShow);
+    const copy = UI_TRANSLATIONS[currentLang] || UI_TRANSLATIONS.en;
+    btn.textContent = willShow ? copy.pinToggleHide : copy.pinToggle;
+    if (willShow) {
+      ensureReportPinMap();
+      setTimeout(() => reportPinMap?.invalidateSize(), 90);
+    }
+  });
+
+  $("#duplicate-alert")?.addEventListener("click", (e) => {
+    const dupBtn = e.target.closest("[data-confirm-duplicate]");
+    if (!dupBtn) return;
+    const targetId = dupBtn.dataset.confirmDuplicate;
+    toggleReportConfirmation(targetId, { forceAdd: true });
+    closeReportModal();
+    navigate("reports");
+    openIssueDrawer(targetId);
+  });
+
+  $("#lang-toggle")?.addEventListener("click", () => {
+    applyLanguage(currentLang === "en" ? "hi" : "en");
+    renderEverything();
+    showToast(currentLang === "hi" ? "हिन्दी भाषा सक्रिय" : "Switched to English");
   });
 
   $("#use-location")?.addEventListener("click", () => {
@@ -2467,9 +2741,7 @@ function bindEvents() {
     }
     navigator.geolocation.getCurrentPosition(
       (pos) => {
-        $("#issue-lat").value = pos.coords.latitude;
-        $("#issue-lon").value = pos.coords.longitude;
-        $("#location-coords-hint").textContent = `GPS coordinates attached (${pos.coords.latitude.toFixed(4)}, ${pos.coords.longitude.toFixed(4)}).`;
+        setReportPinCoords(pos.coords.latitude, pos.coords.longitude, { updateInputIfEmpty: true });
         showToast("Device coordinates attached with your consent.");
       },
       () => showToast("Location permission declined. Use a district button or type a neighbourhood."),
@@ -2523,7 +2795,7 @@ function bindEvents() {
       streetViewState.manualProcedural = true;
       activateProceduralStreetView(
         streetViewState.activeTarget,
-        "3D Twin Street Corridor (Zero API Key · Offline Ready) · Drag 360° & walk street"
+        "3D Street Fallback (Zero API Key · Offline Ready) · Drag 360° & walk street"
       );
     }
   });
@@ -2619,21 +2891,11 @@ function bindEvents() {
     });
   });
 
-  $("#streetview-to-twin")?.addEventListener("click", () => {
-    const reportId = streetViewState.activeTarget.reportId;
-    if (reportId) pending3DFocusId = reportId;
-    navigate("twin");
-    if (reportId && window.CityFix3D?.isInitialized) {
-      pending3DFocusId = null;
-      window.CityFix3D.focusReport(reportId);
-    }
-  });
-
   $("#streetview-fallback-twin")?.addEventListener("click", () => {
     streetViewState.manualProcedural = true;
     activateProceduralStreetView(
       streetViewState.activeTarget,
-      "3D Twin Street Corridor (Zero API Key · Offline Ready) · Drag 360° & walk street"
+      "3D Street Fallback (Zero API Key · Offline Ready) · Drag 360° & walk street"
     );
   });
 
@@ -2648,6 +2910,12 @@ function bindEvents() {
       const report = reports.find((r) => r.id === svBtn.dataset.openStreetview);
       if (report) openStreetViewForReport(report, { ensureVisibleMode: true });
     }
+  });
+
+  $("#map-hotspot-toggle")?.addEventListener("click", () => {
+    showHotspots = !showHotspots;
+    renderHotspotRings(getFilteredMapReports());
+    showToast(showHotspots ? "Map hotspot density rings enabled" : "Map hotspot density rings hidden");
   });
 
   $$("[data-mapfilter]").forEach((btn) => {
@@ -2676,46 +2944,6 @@ function bindEvents() {
     renderMaps();
   });
 
-  // 3D Twin Dock controls
-  $("#twin-dock-toggle")?.addEventListener("click", () => {
-    const wrap = $("#twin-dock-wrap");
-    const collapsed = wrap.classList.toggle("collapsed");
-    $("#twin-dock-toggle").textContent = collapsed ? "▴ Show 3D Controls" : "▾ Hide 3D Controls";
-    $("#twin-dock-toggle").setAttribute("aria-expanded", String(!collapsed));
-  });
-
-  $$("[data-camera]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      $$("[data-camera]").forEach((b) => b.classList.remove("active"));
-      btn.classList.add("active");
-      window.CityFix3D?.setCameraPreset(btn.dataset.camera);
-    });
-  });
-
-  const sync3DFilters = () => {
-    window.CityFix3D?.setFilters({
-      category: $("#twin-category-filter")?.value || "all",
-      severity: $("#twin-severity-filter")?.value || "all",
-      search: $("#twin-search")?.value || "",
-    });
-  };
-  $("#twin-category-filter")?.addEventListener("change", sync3DFilters);
-  $("#twin-severity-filter")?.addEventListener("change", sync3DFilters);
-  $("#twin-search")?.addEventListener("input", sync3DFilters);
-
-  $("#twin-cluster-toggle")?.addEventListener("click", () => {
-    const btn = $("#twin-cluster-toggle");
-    const next = !(btn.getAttribute("aria-pressed") === "true");
-    btn.setAttribute("aria-pressed", String(next));
-    btn.classList.toggle("active", next);
-    btn.textContent = `Clustering: ${next ? "On" : "Off"}`;
-    window.CityFix3D?.setFilters({ clustering: next });
-  });
-
-  $("#twin-inspector-close")?.addEventListener("click", () => {
-    $("#twin-inspector").hidden = true;
-  });
-
   // Admin & Export
   $("#admin-toggle")?.addEventListener("click", () => {
     demoAdminMode = !demoAdminMode;
@@ -2723,6 +2951,41 @@ function bindEvents() {
     updateEnvironmentUI();
     showToast(demoAdminMode ? "Demo admin preview enabled (local only)" : "Demo admin preview disabled");
   });
+
+  $("#admin-after-photo")?.addEventListener("change", (event) => {
+    const file = event.target.files?.[0];
+    adminAfterPhotoDataUrl = null;
+    if (!file) {
+      if ($("#admin-after-photo-preview")) $("#admin-after-photo-preview").innerHTML = "";
+      if ($("#admin-after-photo-clear")) $("#admin-after-photo-clear").hidden = true;
+      return;
+    }
+    if (!["image/jpeg", "image/png", "image/webp"].includes(file.type) || file.size > 5 * 1024 * 1024) {
+      showToast("Resolution proof photo must be JPEG, PNG, or WebP under 5 MB.");
+      event.target.value = "";
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const res = String(reader.result || "");
+      if (isSafeImageUrl(res)) {
+        adminAfterPhotoDataUrl = res;
+        if ($("#admin-after-photo-preview")) {
+          $("#admin-after-photo-preview").innerHTML = `<img src="${res}" alt="Resolution proof preview" />`;
+        }
+        if ($("#admin-after-photo-clear")) $("#admin-after-photo-clear").hidden = false;
+      }
+    };
+    reader.readAsDataURL(file);
+  });
+
+  $("#admin-after-photo-clear")?.addEventListener("click", () => {
+    adminAfterPhotoDataUrl = null;
+    if ($("#admin-after-photo")) $("#admin-after-photo").value = "";
+    if ($("#admin-after-photo-preview")) $("#admin-after-photo-preview").innerHTML = "";
+    if ($("#admin-after-photo-clear")) $("#admin-after-photo-clear").hidden = true;
+  });
+
   $("#export-csv")?.addEventListener("click", () => exportReports("csv"));
   $("#export-json")?.addEventListener("click", () => exportReports("json"));
 
@@ -2820,8 +3083,30 @@ async function bootstrapCloud() {
   }
 }
 
+function handleHashRoute() {
+  const raw = (window.location.hash || "").replace(/^#/, "");
+  if (!raw) return;
+  if (raw === "report") {
+    openReportModal();
+    return;
+  }
+  if (raw.toLowerCase().startsWith("track=")) {
+    const refId = decodeURIComponent(raw.slice(6)).trim();
+    if (refId) {
+      navigate("reports");
+      if ($("#track-ref-input")) $("#track-ref-input").value = refId;
+      openIssueDrawer(refId);
+    }
+    return;
+  }
+  if (["overview", "explore", "reports", "impact", "admin"].includes(raw)) {
+    navigate(raw);
+  }
+}
+
 function startCityFix() {
   bindEvents();
+  applyLanguage(currentLang);
   renderEverything();
 
   miniMap = initializeMap("#mini-map", [26.9124, 75.7873], 11);
@@ -2831,13 +3116,8 @@ function startCityFix() {
   checkServerCapabilities();
   bootstrapCloud();
 
-  // Deep-link hash routing from landing page
-  const hash = (window.location.hash || "").replace("#", "");
-  if (hash === "report") {
-    openReportModal();
-  } else if (["twin", "explore", "reports", "impact", "admin"].includes(hash)) {
-    navigate(hash);
-  }
+  window.addEventListener("hashchange", handleHashRoute);
+  handleHashRoute();
 }
 
 startCityFix();

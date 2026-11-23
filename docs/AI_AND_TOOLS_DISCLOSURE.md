@@ -2,7 +2,7 @@
 
 ## Runtime frameworks, libraries, and APIs used
 - **Node.js & Express (`^5.3.0`)**: Local web server, static asset delivery, `/vendor/three` module hosting, and server-side AI proxy routes (`server.js`).
-- **Three.js (`^0.187.0`)**: Procedural 3D Jaipur Digital Twin (`three-city.js`) and offline 3D Twin street corridor (`street-walk-3d.js`) using `OrbitControls` and `RoomEnvironment`.
+- **Three.js (`^0.187.0`)**: Offline interactive street-corridor fallback (`street-walk-3d.js`) inside the City Map 3D Street Explorer.
 - **Google Gemini via `@google/genai` (`^3.6.1`, `gemini-4-hydrogen`)**: Server-side structured JSON photo/text issue triage and duplicate checking (`/api/triage-image`, `/api/triage-issue`) plus optional Supabase Edge Function (`supabase/functions/triage-image/index.ts`).
 - **Leaflet (`1.9.4`), MapLibre GL (`4.7.1`), OpenStreetMap, OpenFreeMap & Panoramax**: Interactive 2D geospatial mapping with animated category layer toggles, zero-API-key 3D extruded OSM Jaipur buildings, and open crowd-sourced Panoramax street imagery.
 - **Supabase JS v2, Postgres, Auth, Storage, Edge Functions**: Optional cloud authentication, RLS-enforced issue/audit persistence, and private photo storage.
@@ -11,7 +11,7 @@
 
 ## Data sources & honesty disclosures
 - **Demo dataset**: Default reports (`CF-1021`–`CF-1024`), Jaipur coordinates, and participation points are synthetic seed examples clearly labelled in the UI.
-- **3D city geometry**: Procedural Three.js geometry (no external `.glb`/`.gltf` model was supplied in the repository) alongside OpenStreetMap building footprints via OpenFreeMap.
+- **3D city geometry**: OpenStreetMap 3D extruded building footprints via OpenFreeMap in the City Map Street Explorer, plus a procedural street-corridor fallback (`street-walk-3d.js`). No external `.glb`/`.gltf` model was supplied in the repository.
 - **No official municipal feed**: No Jaipur Municipal Corporation API or live government dataset is connected.
 
 ## AI limitations

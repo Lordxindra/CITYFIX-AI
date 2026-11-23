@@ -5,8 +5,7 @@ Deadline in the supplied problem statement: Saturday, 28 November 2026, 11:59 PM
 ## Engineering & product deliverables
 - [x] Redesigned 10-section cinematic landing page (`index.html`, `landing.css`, `landing.js`) with all 7 `flow-approved` Jaipur videos
 - [x] Interactive Smart City Command Center (`app.html`, `app.js`, `styles.css`)
-- [x] Interactive procedural Three.js 3D Jaipur Digital Twin (`three-city.js`, local `/vendor/three`) with orbit controls, clustering, search/severity/category filters, building & issue inspection, and WebGL fallback
-- [x] Interactive City Map with animated category Layer Control Panel (`.layer-toggle-row`) + Zero-API-Key 3D Street Explorer (`MapLibre + OpenFreeMap 3D OSM Buildings`, optional `Panoramax` open street photos, and Three.js `3D Twin Corridor` in `street-walk-3d.js`)
+- [x] Interactive City Map with animated category Layer Control Panel (`.layer-toggle-row`) + Zero-API-Key 3D Street Explorer (`MapLibre + OpenFreeMap 3D OSM Buildings`, optional `Panoramax` open street photos, and Three.js `3D Street Fallback` in `street-walk-3d.js`)
 - [x] Server-side Gemini AI endpoints (`server.js`: `/api/capabilities`, `/api/triage-image`, `/api/triage-issue`) using `@google/genai` (`gemini-4-hydrogen`) + aligned Supabase Edge Function (`supabase/functions/triage-image/index.ts`) + zero-API local photo/rule fallback
 - [x] Citizen reporting workflow (photo MIME/size validation, consent-only GPS + quick Jaipur locations, AI/heuristic triage & duplicate check, confirmation ID, and Reference ID lookup)
 - [x] Supabase config wired (`supabase/config.js`) + Admin Command Center with `profiles.is_admin` permission checks, local Demo Admin preview toggle, `issue_events` audit log, and sanitized CSV/JSON exports
