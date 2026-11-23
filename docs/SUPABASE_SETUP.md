@@ -23,7 +23,7 @@ Install the Supabase CLI, log in, link the local project, and run:
 
 Set secrets on the server side:
 - supabase secrets set GEMINI_API_KEY=YOUR_GEMINI_KEY
-- supabase secrets set GEMINI_MODEL=gemini-2.5-flash
+- supabase secrets set GEMINI_MODEL=gemini-4-hydrogen
 
 Never commit the Gemini API key or a Supabase service_role key. The function requires a signed-in user JWT and accepts JPEG, PNG or WebP images up to 5 MB.
 

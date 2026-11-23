@@ -1,13 +1,11 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 
 const CITY_CONFIG = {
-  gridSize: 18,
-  blockSize: 42,
-  roadWidth: 14,
-  buildingDensity: 0.75,
-  minBuildingHeight: 14,
-  maxBuildingHeight: 110,
+  gridSize: 10,
+  blockSize: 44,
+  roadWidth: 16,
   jaipurBounds: {
     latMin: 26.82,
     latMax: 26.98,
@@ -15,1182 +13,1256 @@ const CITY_CONFIG = {
     lonMax: 75.88,
   },
   colors: {
-    sky: 0x02050c,
-    fogNear: 0x030812,
-    fogFar: 0x061220,
-    road: 0x0d1624,
-    roadLine: 0x1e3a5f,
-    sidewalk: 0x0f1a2c,
-    buildingBase: 0x081224,
-    buildingWindow: 0x0e2238,
-    buildingWindowLit: 0x00f5d4,
-    buildingAccent: 0x00ffff,
-    buildingAccentWarm: 0xffd700,
-    park: 0x061e12,
-    parkGrass: 0x0a2a14,
-    streetlight: 0x1a2e42,
-    streetlightGlow: 0x00f5d4,
+    sky: 0x050a14,
+    fog: 0x050a14,
+    ground: 0x070d19,
+    road: 0x0e1726,
+    sidewalk: 0x162235,
+    heritageBase: 0x5c342e,
+    heritageTrim: 0xb97a63,
+    civicBase: 0x1e2c44,
+    civicDome: 0x67e8f9,
+    commercialBase: 0x0f1c30,
+    residentialBase: 0x132238,
+    park: 0x0a251c,
+    parkBorder: 0x16382c,
+    water: 0x0ea5e9,
+    markerCritical: 0xf43f5e,
     markerHigh: 0xfb7185,
-    markerMedium: 0xfbbf24,
-    markerLow: 0x22e88d,
-    vehicle: 0x00f5d4,
-    vehicleWarm: 0xffcc00,
-    vehicleTaillight: 0xff3344,
-    water: 0x0066aa,
-    waterSurface: 0x0088cc,
+    markerNormal: 0xf59e0b,
+    markerResolved: 0x10b981,
+    cluster: 0x38bdf8,
   },
-  lod: {
-    highDistance: 180,
-    mediumDistance: 350,
-    lowDistance: 600,
-  },
-  timeOfDay: 0.45,
 };
 
-let scene, camera, renderer, controls;
-let cityGroup, markerGroup, vehicleGroup, labelGroup;
-let animationId = null;
-let isInitialized = false;
-let currentReports = [];
-let mapFilter = 'all';
-let reducedMotion = false;
-let selectedMarker = null;
-let hoveredMarker = null;
-let raycaster, mouse;
-let markerLabels = new Map();
-let time = 0;
-let lastTime = 0;
+const DISTRICT_ZONES = [
+  { name: 'Jhotwara', gx: 1, gz: 1, lat: 26.941, lon: 75.746, kind: 'Residential & Transit' },
+  { name: 'Walled Pink City', gx: 5, gz: 2, lat: 26.924, lon: 75.824, kind: 'Heritage Precinct' },
+  { name: 'Vaishali Nagar', gx: 2, gz: 4, lat: 26.912, lon: 75.739, kind: 'Commercial & Residential' },
+  { name: 'MI Road & Civic Core', gx: 5, gz: 5, lat: 26.912, lon: 75.787, kind: 'Civic & Central Corridor' },
+  { name: 'Central Park', gx: 4, gz: 6, lat: 26.901, lon: 75.805, kind: 'Urban Green Zone' },
+  { name: 'Mansarovar', gx: 3, gz: 8, lat: 26.854, lon: 75.764, kind: 'Residential Ward' },
+  { name: 'Malviya Nagar', gx: 7, gz: 8, lat: 26.854, lon: 75.805, kind: 'Commercial & Tech Hub' },
+];
+
+const CAMERA_PRESETS = {
+  overview: { pos: new THREE.Vector3(330, 265, 340), target: new THREE.Vector3(0, 12, 0) },
+  heritage: { pos: new THREE.Vector3(145, 130, -35), target: new THREE.Vector3(30, 16, -150) },
+  civic: { pos: new THREE.Vector3(150, 135, 165), target: new THREE.Vector3(15, 14, 10) },
+  topdown: { pos: new THREE.Vector3(0, 460, 45), target: new THREE.Vector3(0, 0, 0) },
+};
+
+// Pre-allocated math helpers for zero-GC animation loop
+const _vec3 = new THREE.Vector3();
+const _vec3b = new THREE.Vector3();
+const _mat4 = new THREE.Matrix4();
+const _quat = new THREE.Quaternion();
+const _scale = new THREE.Vector3();
+const _color = new THREE.Color();
+
+let scene = null;
+let camera = null;
+let renderer = null;
+let controls = null;
+let cityGroup = null;
+let markerGroup = null;
+let vehicleGroup = null;
+let fountainWater = null;
 
 let canvasContainer = null;
-let mapContainer = null;
-let toggleBtn = null;
+let hoverTooltip = null;
 
-const materialCache = new Map();
-const geometryCache = new Map();
+let isInitialized = false;
+let isPaused = false;
+let isSoftwareGl = false;
+let reducedMotion = false;
+let frameId = 0;
+let lastTimestamp = 0;
+let elapsedTime = 0;
+let lastRaycastTime = 0;
 
-function getDomElements() {
-  canvasContainer = document.getElementById('city-3d');
-  mapContainer = document.getElementById('mini-map');
-  toggleBtn = document.getElementById('map-view-toggle');
+let raycaster = null;
+let pointerNDC = new THREE.Vector2();
+let buildingHitTargets = [];
+let markerHitTargets = [];
+let hoveredTarget = null;
+let selectedBuildingMesh = null;
+let selectedMarkerGroup = null;
+
+let cameraTransition = null;
+
+let allReports = [];
+let activeFilters = {
+  status: 'all',
+  category: 'all',
+  severity: 'all',
+  search: '',
+  clustering: true,
+};
+
+let callbacks = {
+  onSelectIssue: null,
+  onSelectBuilding: null,
+  onReady: null,
+  onError: null,
+};
+
+const cachedGeometries = new Set();
+const cachedMaterials = new Set();
+const cachedTextures = new Set();
+
+function trackGeo(geo) {
+  cachedGeometries.add(geo);
+  return geo;
+}
+function trackMat(mat) {
+  cachedMaterials.add(mat);
+  return mat;
+}
+function trackTex(tex) {
+  cachedTextures.add(tex);
+  return tex;
+}
+
+function detectSoftwareWebGL() {
+  try {
+    const probe = document.createElement('canvas');
+    const gl = probe.getContext('webgl2') || probe.getContext('webgl');
+    if (!gl) return true;
+    const ext = gl.getExtension('WEBGL_debug_renderer_info');
+    const param = ext ? ext.UNMASKED_RENDERER_WEBGL : gl.RENDERER;
+    const gpu = String(gl.getParameter(param) || '');
+    gl.getExtension('WEBGL_lose_context')?.loseContext();
+    return /SwiftShader|llvmpipe|softpipe|Software|Basic Render/i.test(gpu);
+  } catch {
+    return true;
+  }
 }
 
 function checkWebGLSupport() {
   try {
     const canvas = document.createElement('canvas');
-    return !!(window.WebGLRenderingContext && (canvas.getContext('webgl2') || canvas.getContext('webgl') || canvas.getContext('experimental-webgl')));
-  } catch (e) {
+    return !!(window.WebGLRenderingContext && (canvas.getContext('webgl2') || canvas.getContext('webgl')));
+  } catch {
     return false;
   }
 }
 
-function checkReducedMotion() {
-  return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+function createWindowFacadeTexture(accentHex, baseHex, cols = 6, rows = 12) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 256;
+  canvas.height = 512;
+  const ctx = canvas.getContext('2d');
+
+  ctx.fillStyle = baseHex;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  const padX = 16;
+  const padY = 18;
+  const cellW = (canvas.width - padX * 2) / cols;
+  const cellH = (canvas.height - padY * 2) / rows;
+
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const lit = ((r * 7 + c * 13) % 5) !== 0;
+      const warm = ((r + c) % 4) === 0;
+      if (lit) {
+        ctx.fillStyle = warm ? 'rgba(251, 191, 36, 0.55)' : accentHex;
+      } else {
+        ctx.fillStyle = 'rgba(12, 24, 42, 0.85)';
+      }
+      ctx.fillRect(
+        padX + c * cellW + 4,
+        padY + r * cellH + 5,
+        Math.max(4, cellW - 8),
+        Math.max(6, cellH - 10)
+      );
+    }
+  }
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.ClampToEdgeWrapping;
+  if (renderer) tex.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+  return trackTex(tex);
 }
 
-function getCachedMaterial(key, factory) {
-  if (!materialCache.has(key)) {
-    materialCache.set(key, factory());
+function createRoadAsphaltTexture() {
+  const canvas = document.createElement('canvas');
+  canvas.width = 256;
+  canvas.height = 256;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#0e1726';
+  ctx.fillRect(0, 0, 256, 256);
+
+  // Subtle asphalt grain
+  for (let i = 0; i < 650; i++) {
+    const x = (i * 73) % 256;
+    const y = (i * 137) % 256;
+    ctx.fillStyle = i % 2 === 0 ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.18)';
+    ctx.fillRect(x, y, 2, 2);
   }
-  return materialCache.get(key);
+
+  // Center dashed divider
+  ctx.fillStyle = 'rgba(148, 163, 184, 0.36)';
+  for (let y = 12; y < 256; y += 44) {
+    ctx.fillRect(126, y, 4, 24);
+  }
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(1, 18);
+  if (renderer) tex.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+  return trackTex(tex);
 }
 
-function getCachedGeometry(key, factory) {
-  if (!geometryCache.has(key)) {
-    geometryCache.set(key, factory());
-  }
-  return geometryCache.get(key);
+function gridToWorld(gx, gz) {
+  const step = CITY_CONFIG.blockSize + CITY_CONFIG.roadWidth;
+  const half = (CITY_CONFIG.gridSize * step) / 2;
+  return {
+    x: gx * step - half + step / 2,
+    z: gz * step - half + step / 2,
+  };
 }
 
-function initThreeCity() {
-  if (isInitialized) return;
-  getDomElements();
-  if (!canvasContainer) {
-    console.error('Canvas container #city-3d not found');
-    return;
+function geoToWorld(report) {
+  const step = CITY_CONFIG.blockSize + CITY_CONFIG.roadWidth;
+  const worldSize = CITY_CONFIG.gridSize * step;
+  const half = worldSize / 2;
+  const { latMin, latMax, lonMin, lonMax } = CITY_CONFIG.jaipurBounds;
+
+  let lat = Number(report.lat);
+  let lon = Number(report.lon);
+
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+    // Deterministic Jaipur district fallback for reports submitted without GPS coordinates
+    const text = String(report.location || '').toLowerCase();
+    const matchedZone = DISTRICT_ZONES.find((z) => text.includes(z.name.toLowerCase().split(' ')[0]));
+    if (matchedZone) {
+      lat = matchedZone.lat;
+      lon = matchedZone.lon;
+    } else {
+      let hash = 0;
+      const key = String(report.id || report.location || 'CF');
+      for (let i = 0; i < key.length; i++) hash = ((hash << 5) - hash) + key.charCodeAt(i);
+      const zone = DISTRICT_ZONES[Math.abs(hash) % DISTRICT_ZONES.length];
+      lat = zone.lat + ((hash % 7) - 3) * 0.002;
+      lon = zone.lon + (((hash >> 3) % 7) - 3) * 0.002;
+    }
   }
-  if (!checkWebGLSupport()) {
-    showFallback('WebGL not supported in this browser.');
-    return;
-  }
 
-  reducedMotion = checkReducedMotion();
-
-  const width = canvasContainer.clientWidth;
-  const height = canvasContainer.clientHeight;
-
-  renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance', preserveDrawingBuffer: true });
-  renderer.setSize(width, height);
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
-  renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-  renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.2;
-  renderer.physicallyCorrectLights = true;
-  renderer.outputColorSpace = THREE.SRGBColorSpace;
-  canvasContainer.appendChild(renderer.domElement);
-  canvasContainer.classList.remove('loading');
-
-  scene = new THREE.Scene();
-  scene.background = new THREE.Color(CITY_CONFIG.colors.sky);
-  scene.fog = new THREE.FogExp2(CITY_CONFIG.colors.fogFar, 0.001);
-
-  const aspect = width / height;
-  const frustumSize = 240;
-  camera = new THREE.OrthographicCamera(
-    frustumSize * aspect / -2,
-    frustumSize * aspect / 2,
-    frustumSize / 2,
-    frustumSize / -2,
-    1,
-    3000
-  );
-  camera.position.set(380, 380, 380);
-  camera.lookAt(0, 0, 0);
-
-  controls = new OrbitControls(camera, renderer.domElement);
-  controls.enableDamping = true;
-  controls.dampingFactor = 0.04;
-  controls.enablePan = true;
-  controls.minZoom = 0.22;
-  controls.maxZoom = 5;
-  controls.maxPolarAngle = Math.PI / 2.02;
-  controls.minPolarAngle = Math.PI / 8;
-  controls.target.set(0, 0, 0);
-  controls.enableRotate = true;
-  controls.rotateSpeed = 0.7;
-  controls.zoomSpeed = 1.1;
-  controls.panSpeed = 0.7;
-
-  raycaster = new THREE.Raycaster();
-  mouse = new THREE.Vector2();
-
-  setupLighting();
-  createCity();
-  createMarkerSystem();
-  createVehicles();
-  createLabelSystem();
-
-  window.addEventListener('resize', onResize);
-  canvasContainer.addEventListener('pointermove', onPointerMove);
-  canvasContainer.addEventListener('click', onClick);
-  canvasContainer.addEventListener('pointerleave', onPointerLeave);
-  canvasContainer.addEventListener('mouseenter', () => controls.enabled = true);
-  canvasContainer.addEventListener('mouseleave', () => controls.enabled = false);
-
-  canvasContainer.style.touchAction = 'none';
-  canvasContainer.addEventListener('touchstart', onTouchStart, { passive: true });
-  canvasContainer.addEventListener('touchmove', onTouchMove, { passive: false });
-  canvasContainer.addEventListener('touchend', onTouchEnd);
-
-  animate();
-  isInitialized = true;
-  console.log('CityFix 3D initialized');
+  const latNorm = THREE.MathUtils.clamp((lat - latMin) / (latMax - latMin), 0.06, 0.94);
+  const lonNorm = THREE.MathUtils.clamp((lon - lonMin) / (lonMax - lonMin), 0.06, 0.94);
+  return {
+    x: (lonNorm - 0.5) * worldSize * 0.9,
+    z: (0.5 - latNorm) * worldSize * 0.9,
+    approximate: !Number.isFinite(Number(report.lat)) || !Number.isFinite(Number(report.lon)),
+  };
 }
 
 function setupLighting() {
-  const ambient = new THREE.AmbientLight(0x142840, 0.35);
-  scene.add(ambient);
+  const hemi = new THREE.HemisphereLight(0x7dd3fc, 0x070d19, 0.55);
+  scene.add(hemi);
 
-  const dirLight = new THREE.DirectionalLight(0x00f5d4, 1.1);
-  dirLight.position.set(300, 600, 300);
-  dirLight.castShadow = true;
-  dirLight.shadow.mapSize.set(2048, 2048);
-  dirLight.shadow.camera.near = 10;
-  dirLight.shadow.camera.far = 1200;
-  dirLight.shadow.camera.left = -400;
-  dirLight.shadow.camera.right = 400;
-  dirLight.shadow.camera.top = 400;
-  dirLight.shadow.camera.bottom = -400;
-  dirLight.shadow.bias = -0.0006;
-  dirLight.shadow.normalBias = 0.03;
-  scene.add(dirLight);
+  const keyLight = new THREE.DirectionalLight(0xfef3c7, 1.45);
+  keyLight.position.set(260, 420, 220);
+  if (!isSoftwareGl) {
+    keyLight.castShadow = true;
+    keyLight.shadow.mapSize.set(2048, 2048);
+    keyLight.shadow.camera.near = 20;
+    keyLight.shadow.camera.far = 1100;
+    const d = 340;
+    keyLight.shadow.camera.left = -d;
+    keyLight.shadow.camera.right = d;
+    keyLight.shadow.camera.top = d;
+    keyLight.shadow.camera.bottom = -d;
+    keyLight.shadow.bias = -0.0005;
+    keyLight.shadow.normalBias = 0.025;
+  }
+  scene.add(keyLight);
 
-  const fillLight = new THREE.DirectionalLight(0x004466, 0.2);
-  fillLight.position.set(-300, 300, -300);
-  scene.add(fillLight);
-
-  const hemiLight = new THREE.HemisphereLight(0x00f5d4, 0x02050c, 0.4);
-  scene.add(hemiLight);
-
-  const accentLight1 = new THREE.PointLight(0x00f5d4, 3, 250, 2);
-  accentLight1.position.set(-250, 100, -250);
-  scene.add(accentLight1);
-
-  const accentLight2 = new THREE.PointLight(0x8b5cf6, 2.5, 220, 2);
-  accentLight2.position.set(250, 80, 250);
-  scene.add(accentLight2);
-
-  const accentLight3 = new THREE.PointLight(0x22e88d, 2, 200, 2);
-  accentLight3.position.set(0, 60, -280);
-  scene.add(accentLight3);
+  const rimLight = new THREE.DirectionalLight(0x38bdf8, 0.65);
+  rimLight.position.set(-280, 180, -240);
+  scene.add(rimLight);
 }
 
-function createCity() {
+function createCompositeBuilding(x, z, w, d, districtKind, gx, gz) {
+  const group = new THREE.Group();
+  const seed = (gx * 31 + gz * 17) % 100;
+
+  let baseColor = CITY_CONFIG.colors.residentialBase;
+  let accentColor = 0x38bdf8;
+  let windowColor = 'rgba(56, 189, 248, 0.65)';
+  let height = 22 + (seed % 42);
+
+  if (districtKind === 'heritage') {
+    baseColor = CITY_CONFIG.colors.heritageBase;
+    accentColor = 0xfbbf24;
+    windowColor = 'rgba(251, 191, 36, 0.68)';
+    height = 18 + (seed % 18);
+  } else if (districtKind === 'civic') {
+    baseColor = CITY_CONFIG.colors.civicBase;
+    accentColor = 0x22d3ee;
+    windowColor = 'rgba(34, 211, 238, 0.72)';
+    height = 36 + (seed % 48);
+  } else if (districtKind === 'commercial') {
+    baseColor = CITY_CONFIG.colors.commercialBase;
+    accentColor = 0x60a5fa;
+    windowColor = 'rgba(96, 165, 250, 0.72)';
+    height = 38 + (seed % 58);
+  }
+
+  const facadeTex = createWindowFacadeTexture(windowColor, districtKind === 'heritage' ? '#4a2621' : '#0b1628');
+  const podiumMat = trackMat(new THREE.MeshStandardMaterial({
+    color: baseColor,
+    roughness: 0.78,
+    metalness: 0.12,
+  }));
+  const towerMat = trackMat(new THREE.MeshStandardMaterial({
+    color: 0xffffff,
+    map: facadeTex,
+    roughness: districtKind === 'heritage' ? 0.74 : 0.38,
+    metalness: districtKind === 'heritage' ? 0.1 : 0.45,
+  }));
+  const trimMat = trackMat(new THREE.MeshStandardMaterial({
+    color: accentColor,
+    emissive: accentColor,
+    emissiveIntensity: 0.25,
+    roughness: 0.35,
+    metalness: 0.5,
+  }));
+
+  // 1. Grounded podium base
+  const podiumH = 5.5;
+  const podiumGeo = trackGeo(new THREE.BoxGeometry(w, podiumH, d));
+  const podium = new THREE.Mesh(podiumGeo, podiumMat);
+  podium.position.y = podiumH / 2;
+  podium.castShadow = true;
+  podium.receiveShadow = true;
+  group.add(podium);
+
+  // 2. Primary tower body
+  const towerW = w * 0.84;
+  const towerD = d * 0.84;
+  const towerGeo = trackGeo(new THREE.BoxGeometry(towerW, height, towerD));
+  const tower = new THREE.Mesh(towerGeo, towerMat);
+  tower.position.y = podiumH + height / 2;
+  tower.castShadow = true;
+  tower.receiveShadow = true;
+  group.add(tower);
+
+  // 3. Upper architectural crown / setback
+  const crownH = districtKind === 'heritage' ? 4.5 : 7.5;
+  const crownGeo = trackGeo(new THREE.BoxGeometry(towerW * 0.68, crownH, towerD * 0.68));
+  const crown = new THREE.Mesh(crownGeo, podiumMat);
+  crown.position.y = podiumH + height + crownH / 2;
+  crown.castShadow = true;
+  group.add(crown);
+
+  // 4. Rooftop accent rim or civic dome
+  if (districtKind === 'civic' && (gx + gz) % 2 === 0) {
+    const domeGeo = trackGeo(new THREE.SphereGeometry(towerW * 0.24, 18, 12, 0, Math.PI * 2, 0, Math.PI / 2));
+    const dome = new THREE.Mesh(domeGeo, trimMat);
+    dome.position.y = podiumH + height + crownH;
+    group.add(dome);
+  } else {
+    const rimGeo = trackGeo(new THREE.BoxGeometry(towerW * 0.72, 0.9, towerD * 0.72));
+    const rim = new THREE.Mesh(rimGeo, trimMat);
+    rim.position.y = podiumH + height + crownH + 0.45;
+    group.add(rim);
+  }
+
+  // 5. Heritage chhatri finials / modern antenna mast
+  if (districtKind === 'heritage') {
+    const finGeo = trackGeo(new THREE.ConeGeometry(1.6, 4.2, 6));
+    const fin1 = new THREE.Mesh(finGeo, trimMat);
+    fin1.position.set(-towerW * 0.22, podiumH + height + crownH + 2.1, -towerD * 0.22);
+    const fin2 = fin1.clone();
+    fin2.position.set(towerW * 0.22, podiumH + height + crownH + 2.1, towerD * 0.22);
+    group.add(fin1, fin2);
+  } else if (height > 54) {
+    const mastGeo = trackGeo(new THREE.CylinderGeometry(0.35, 0.6, 12, 6));
+    const mast = new THREE.Mesh(mastGeo, trimMat);
+    mast.position.y = podiumH + height + crownH + 6;
+    group.add(mast);
+  }
+
+  group.position.set(x, 0, z);
+  const nearestZone = DISTRICT_ZONES.reduce((best, zItem) => {
+    const dist = Math.hypot(gx - zItem.gx, gz - zItem.gz);
+    return dist < best.dist ? { dist, zone: zItem } : best;
+  }, { dist: Infinity, zone: DISTRICT_ZONES[3] }).zone;
+
+  const buildingMeta = {
+    id: `BLDG-${gx}${gz}`,
+    name: `${nearestZone.name} Block ${gx + 1}-${gz + 1}`,
+    district: nearestZone.name,
+    zoneKind: nearestZone.kind,
+    floors: Math.round((podiumH + height + crownH) / 3.2),
+    heightMeters: Math.round(podiumH + height + crownH),
+    lat: nearestZone.lat,
+    lon: nearestZone.lon,
+    primaryMesh: tower,
+    originalEmissive: new THREE.Color(0x000000),
+  };
+
+  tower.userData = { buildingMeta };
+  podium.userData = { buildingMeta };
+  crown.userData = { buildingMeta };
+  buildingHitTargets.push(tower, podium);
+
+  cityGroup.add(group);
+}
+
+function createCentralPark(x, z, size) {
+  const parkGroup = new THREE.Group();
+  const baseGeo = trackGeo(new THREE.BoxGeometry(size * 0.94, 0.8, size * 0.94));
+  const baseMat = trackMat(new THREE.MeshStandardMaterial({
+    color: CITY_CONFIG.colors.park,
+    roughness: 0.92,
+    metalness: 0.02,
+  }));
+  const base = new THREE.Mesh(baseGeo, baseMat);
+  base.position.y = 0.4;
+  base.receiveShadow = true;
+  parkGroup.add(base);
+
+  // Central civic plaza ring & water feature
+  const basinGeo = trackGeo(new THREE.CylinderGeometry(6.5, 7.2, 1.1, 24));
+  const basinMat = trackMat(new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.45, metalness: 0.3 }));
+  const basin = new THREE.Mesh(basinGeo, basinMat);
+  basin.position.y = 0.95;
+  basin.receiveShadow = true;
+  parkGroup.add(basin);
+
+  const waterGeo = trackGeo(new THREE.CylinderGeometry(5.6, 5.6, 0.35, 24));
+  const waterMat = trackMat(new THREE.MeshStandardMaterial({
+    color: CITY_CONFIG.colors.water,
+    emissive: 0x0284c7,
+    emissiveIntensity: 0.35,
+    roughness: 0.15,
+    metalness: 0.65,
+  }));
+  fountainWater = new THREE.Mesh(waterGeo, waterMat);
+  fountainWater.position.y = 1.45;
+  parkGroup.add(fountainWater);
+
+  // Instanced trees
+  const treeCount = 16;
+  const trunkGeo = trackGeo(new THREE.CylinderGeometry(0.35, 0.55, 3.6, 7));
+  const trunkMat = trackMat(new THREE.MeshStandardMaterial({ color: 0x452b1b, roughness: 0.9 }));
+  const crownGeo = trackGeo(new THREE.ConeGeometry(2.3, 6.4, 8));
+  const crownMat = trackMat(new THREE.MeshStandardMaterial({ color: 0x15803d, roughness: 0.82 }));
+
+  const trunks = new THREE.InstancedMesh(trunkGeo, trunkMat, treeCount);
+  const crowns = new THREE.InstancedMesh(crownGeo, crownMat, treeCount);
+  trunks.castShadow = true;
+  crowns.castShadow = true;
+
+  for (let i = 0; i < treeCount; i++) {
+    const angle = (i / treeCount) * Math.PI * 2;
+    const radius = 12 + (i % 3) * 4.2;
+    const tx = Math.cos(angle) * radius;
+    const tz = Math.sin(angle) * radius;
+    const s = 0.85 + ((i * 7) % 4) * 0.1;
+
+    _scale.set(s, s, s);
+    _vec3.set(tx, 1.8 * s + 0.8, tz);
+    _mat4.compose(_vec3, _quat.identity(), _scale);
+    trunks.setMatrixAt(i, _mat4);
+
+    _vec3.set(tx, 5.6 * s + 0.8, tz);
+    _mat4.compose(_vec3, _quat.identity(), _scale);
+    crowns.setMatrixAt(i, _mat4);
+
+    _color.setHSL(0.38 + (i % 3) * 0.02, 0.55, 0.28 + (i % 4) * 0.03);
+    crowns.setColorAt(i, _color);
+  }
+  trunks.computeBoundingSphere();
+  crowns.computeBoundingSphere();
+  parkGroup.add(trunks, crowns);
+
+  parkGroup.position.set(x, 0, z);
+  cityGroup.add(parkGroup);
+}
+
+function createCityEnvironment() {
   cityGroup = new THREE.Group();
-  cityGroup.name = 'city';
+  cityGroup.name = 'jaipur-digital-twin';
   scene.add(cityGroup);
 
-  const { gridSize, blockSize, roadWidth, buildingDensity, minBuildingHeight, maxBuildingHeight } = CITY_CONFIG;
-  const halfGrid = (gridSize * (blockSize + roadWidth)) / 2;
+  const { gridSize, blockSize, roadWidth } = CITY_CONFIG;
+  const step = blockSize + roadWidth;
+  const worldSize = gridSize * step;
 
-  const roadMat = getCachedMaterial('road', () => new THREE.MeshStandardMaterial({ color: CITY_CONFIG.colors.road, roughness: 0.95, metalness: 0.03 }));
-  const roadLineMat = getCachedMaterial('roadLine', () => new THREE.MeshBasicMaterial({ color: CITY_CONFIG.colors.roadLine, transparent: true, opacity: 0.45 }));
-  const sidewalkMat = getCachedMaterial('sidewalk', () => new THREE.MeshStandardMaterial({ color: CITY_CONFIG.colors.sidewalk, roughness: 0.82 }));
-  const parkMat = getCachedMaterial('park', () => new THREE.MeshStandardMaterial({ color: CITY_CONFIG.colors.park, roughness: 0.9 }));
-  const parkGrassMat = getCachedMaterial('parkGrass', () => new THREE.MeshStandardMaterial({ color: CITY_CONFIG.colors.parkGrass, roughness: 0.85 }));
+  // Extended terrain base (extends well past urban blocks into fog)
+  const terrainGeo = trackGeo(new THREE.PlaneGeometry(worldSize * 3.6, worldSize * 3.6));
+  const terrainMat = trackMat(new THREE.MeshStandardMaterial({
+    color: CITY_CONFIG.colors.ground,
+    roughness: 0.95,
+    metalness: 0.02,
+  }));
+  const terrain = new THREE.Mesh(terrainGeo, terrainMat);
+  terrain.rotation.x = -Math.PI / 2;
+  terrain.position.y = 0;
+  terrain.receiveShadow = true;
+  cityGroup.add(terrain);
 
-  const buildingTypes = [
-    { name: 'residential', baseColor: 0x0a1830, windowRatio: 0.72, accentColor: 0x00f5d4, heightBias: 0.8 },
-    { name: 'commercial', baseColor: 0x08162a, windowRatio: 0.88, accentColor: 0x8b5cf6, heightBias: 1.2 },
-    { name: 'civic', baseColor: 0x0c1a35, windowRatio: 0.6, accentColor: 0xffd700, heightBias: 1.0 },
-    { name: 'landmark', baseColor: 0x081224, windowRatio: 0.5, accentColor: 0xff6b9d, heightBias: 1.5 },
-  ];
+  // Subtle spatial coordinate grid
+  const gridHelper = new THREE.GridHelper(worldSize * 1.4, 36, 0x1e3a5f, 0x0f1f38);
+  gridHelper.position.y = 0.04;
+  cityGroup.add(gridHelper);
+
+  // Paved arterial road network with canvas texture
+  const roadTex = createRoadAsphaltTexture();
+  const roadMat = trackMat(new THREE.MeshStandardMaterial({
+    map: roadTex,
+    roughness: 0.88,
+    metalness: 0.08,
+  }));
+  const roadGeo = trackGeo(new THREE.BoxGeometry(roadWidth, 0.22, worldSize + roadWidth));
+  const half = worldSize / 2;
+
+  for (let i = 0; i <= gridSize; i++) {
+    const pos = i * step - half;
+    const roadZ = new THREE.Mesh(roadGeo, roadMat);
+    roadZ.position.set(pos, 0.12, 0);
+    roadZ.receiveShadow = true;
+    cityGroup.add(roadZ);
+
+    const roadX = new THREE.Mesh(roadGeo, roadMat);
+    roadX.rotation.y = Math.PI / 2;
+    roadX.position.set(0, 0.14, pos);
+    roadX.receiveShadow = true;
+    cityGroup.add(roadX);
+  }
+
+  // Sidewalk plinths & buildings / parks
+  const sidewalkGeo = trackGeo(new THREE.BoxGeometry(blockSize + 3.2, 0.35, blockSize + 3.2));
+  const sidewalkMat = trackMat(new THREE.MeshStandardMaterial({
+    color: CITY_CONFIG.colors.sidewalk,
+    roughness: 0.85,
+  }));
 
   for (let gx = 0; gx < gridSize; gx++) {
     for (let gz = 0; gz < gridSize; gz++) {
-      const x = gx * (blockSize + roadWidth) - halfGrid + blockSize / 2 + roadWidth / 2;
-      const z = gz * (blockSize + roadWidth) - halfGrid + blockSize / 2 + roadWidth / 2;
+      const { x, z } = gridToWorld(gx, gz);
 
-      const isPark = (gx + gz) % 7 === 0 && Math.random() < 0.1;
-      if (isPark) {
-        createPark(x, z, blockSize);
+      const sidewalk = new THREE.Mesh(sidewalkGeo, sidewalkMat);
+      sidewalk.position.set(x, 0.18, z);
+      sidewalk.receiveShadow = true;
+      cityGroup.add(sidewalk);
+
+      // Central Park & neighborhood green squares
+      if ((gx === 4 && gz === 6) || (gx === 7 && gz === 3) || (gx === 1 && gz === 7)) {
+        createCentralPark(x, z, blockSize);
         continue;
       }
 
-      if (Math.random() < buildingDensity) {
-        const type = buildingTypes[Math.floor(Math.random() * buildingTypes.length)];
-        createBuilding(x, z, blockSize * 0.88, blockSize * 0.88, type);
-      }
+      let districtKind = 'residential';
+      if (gx >= 4 && gx <= 6 && gz <= 3) districtKind = 'heritage';
+      else if (gx >= 4 && gx <= 6 && gz >= 4 && gz <= 6) districtKind = 'civic';
+      else if (gx <= 3 || gz >= 7) districtKind = (gx + gz) % 3 === 0 ? 'commercial' : 'residential';
+
+      createCompositeBuilding(x, z, blockSize * 0.82, blockSize * 0.82, districtKind, gx, gz);
     }
   }
 
-  createRoadNetwork();
-  createStreetlights();
-  createAmbientDetails();
-
-  function createBuilding(bx, bz, bw, bd, type) {
-    const baseFloors = Math.floor(minBuildingHeight + Math.random() * (maxBuildingHeight - minBuildingHeight));
-    const floors = Math.max(3, Math.floor(baseFloors * type.heightBias));
-    const height = floors * 3.5;
-    const segments = Math.max(1, Math.floor(floors / 12));
-
-    const cacheKey = `${Math.round(bw)}x${Math.round(bd)}x${height}`;
-    const geo = getCachedGeometry(cacheKey, () => new THREE.BoxGeometry(bw, height, bd, 1, segments, 1));
-
-    const mat = getCachedMaterial(`building_${type.name}`, () => new THREE.MeshStandardMaterial({
-      color: type.baseColor,
-      roughness: 0.62,
-      metalness: 0.12,
-    }));
-
-    const building = new THREE.Mesh(geo, mat);
-    building.position.set(bx, height / 2, bz);
-    building.castShadow = true;
-    building.receiveShadow = true;
-    building.userData = { type: type.name, floors, height, bw, bd };
-    cityGroup.add(building);
-
-    addWindows(building, bw, bd, height, floors, type);
-    addBuildingAccents(building, bw, bd, height, type);
-    addRooftopDetails(building, bw, bd, height, type);
-  }
-
-  function addWindows(building, bw, bd, height, floors, type) {
-    const windowGeo = getCachedGeometry('window', () => new THREE.PlaneGeometry(1.5, 1.5));
-    const litMat = getCachedMaterial('windowLit', () => new THREE.MeshBasicMaterial({
-      color: CITY_CONFIG.colors.buildingWindowLit,
-      transparent: true,
-      opacity: 0.95,
-      side: THREE.DoubleSide,
-    }));
-    const darkMat = getCachedMaterial('windowDark', () => new THREE.MeshBasicMaterial({
-      color: CITY_CONFIG.colors.buildingWindow,
-      transparent: true,
-      opacity: 0.45,
-      side: THREE.DoubleSide,
-    }));
-
-    const windowGroup = new THREE.Group();
-    const spacing = 3.8;
-    const margin = 2.0;
-
-    for (let side = 0; side < 4; side++) {
-      const isFrontBack = side < 2;
-      const width = isFrontBack ? bw : bd;
-      const cols = Math.floor((width - margin * 2) / spacing);
-
-      for (let col = 0; col < cols; col++) {
-        for (let floor = 0; floor < floors; floor++) {
-          if (Math.random() > type.windowRatio) continue;
-
-          const isLit = Math.random() < 0.72;
-          const win = new THREE.Mesh(windowGeo, isLit ? litMat : darkMat);
-          const y = -height / 2 + 2.5 + floor * 3.5;
-          const xOffset = -width / 2 + margin + col * spacing + (Math.random() - 0.5) * 0.4;
-
-          if (side === 0) {
-            win.position.set(xOffset, y, bd / 2 + 0.03);
-          } else if (side === 1) {
-            win.position.set(xOffset, y, -bd / 2 - 0.03);
-            win.rotation.y = Math.PI;
-          } else if (side === 2) {
-            win.position.set(bw / 2 + 0.03, y, -xOffset);
-            win.rotation.y = -Math.PI / 2;
-          } else {
-            win.position.set(-bw / 2 - 0.03, y, xOffset);
-            win.rotation.y = Math.PI / 2;
-          }
-          windowGroup.add(win);
-        }
-      }
-    }
-    building.add(windowGroup);
-  }
-
-  function addBuildingAccents(building, bw, bd, height, type) {
-    const accentMat = getCachedMaterial(`accent_${type.name}`, () => new THREE.MeshBasicMaterial({ color: type.accentColor, transparent: true, opacity: 0.65 }));
-    const accentGeo = getCachedGeometry(`accent_${bw}_${bd}`, () => new THREE.BoxGeometry(bw + 0.5, 0.3, bd + 0.5));
-
-    const accentCount = Math.floor(height / 16);
-    for (let i = 1; i < accentCount; i++) {
-      const accent = new THREE.Mesh(accentGeo, accentMat);
-      accent.position.set(0, -height / 2 + i * 16, 0);
-      building.add(accent);
-    }
-
-    const topAccent = new THREE.Mesh(
-      getCachedGeometry(`topAccent_${bw}_${bd}`, () => new THREE.BoxGeometry(bw + 1, 1, bd + 1)),
-      getCachedMaterial(`topAccentMat_${type.name}`, () => new THREE.MeshBasicMaterial({ color: type.accentColor, transparent: true, opacity: 0.35 }))
-    );
-    topAccent.position.set(0, height / 2 + 0.5, 0);
-    building.add(topAccent);
-  }
-
-  function addRooftopDetails(building, bw, bd, height, type) {
-    if (type.name === 'landmark' || Math.random() < 0.28) {
-      const detailGeo = getCachedGeometry('roofDetail', () => new THREE.CylinderGeometry(0.9, 1.4, 6, 7));
-      const detailMat = getCachedMaterial('roofDetailMat', () => new THREE.MeshStandardMaterial({ color: 0x122840, metalness: 0.45, roughness: 0.45 }));
-      const detail = new THREE.Mesh(detailGeo, detailMat);
-      detail.position.set((Math.random() - 0.5) * bw * 0.35, height / 2 + 3, (Math.random() - 0.5) * bd * 0.35);
-      detail.castShadow = true;
-      building.add(detail);
-    }
-
-    if (type.name === 'commercial' && Math.random() < 0.45) {
-      const helipadGeo = getCachedGeometry('helipad', () => new THREE.RingGeometry(2.8, 4, 32));
-      const helipadMat = getCachedMaterial('helipadMat', () => new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.25, side: THREE.DoubleSide }));
-      const helipad = new THREE.Mesh(helipadGeo, helipadMat);
-      helipad.rotation.x = -Math.PI / 2;
-      helipad.position.set(0, height / 2 + 0.15, 0);
-      building.add(helipad);
-    }
-
-    if (type.name === 'civic' && Math.random() < 0.35) {
-      const flagPoleGeo = getCachedGeometry('flagPole', () => new THREE.CylinderGeometry(0.08, 0.12, 10, 6));
-      const flagPoleMat = getCachedMaterial('flagPoleMat', () => new THREE.MeshStandardMaterial({ color: 0x1a2e42, metalness: 0.5, roughness: 0.4 }));
-      const flagPole = new THREE.Mesh(flagPoleGeo, flagPoleMat);
-      flagPole.position.set(bw * 0.35, height / 2 + 5, bd * 0.35);
-      flagPole.castShadow = true;
-      building.add(flagPole);
-
-      const flagGeo = getCachedGeometry('flag', () => new THREE.PlaneGeometry(4, 2.5));
-      const flagMat = getCachedMaterial('flagMat', () => new THREE.MeshBasicMaterial({ color: 0xff6b6b, transparent: true, opacity: 0.9, side: THREE.DoubleSide }));
-      const flag = new THREE.Mesh(flagGeo, flagMat);
-      flag.position.set(0, 5, 2);
-      flag.rotation.y = Math.PI / 4;
-      flagPole.add(flag);
+  // Instanced streetlamp poles + glowing fixtures (high performance)
+  const lampPositions = [];
+  for (let gx = 0; gx <= gridSize; gx += 2) {
+    for (let gz = 0; gz <= gridSize; gz += 2) {
+      const posX = gx * step - half + roadWidth * 0.55;
+      const posZ = gz * step - half + roadWidth * 0.55;
+      lampPositions.push([posX, posZ]);
     }
   }
 
-  function createPark(px, pz, size) {
-    const parkGeo = getCachedGeometry(`park_${size}`, () => new THREE.BoxGeometry(size * 0.94, 1.5, size * 0.94));
-    const park = new THREE.Mesh(parkGeo, parkMat);
-    park.position.set(px, 0.75, pz);
-    park.receiveShadow = true;
-    park.userData = { isPark: true };
-    cityGroup.add(park);
+  const poleGeo = trackGeo(new THREE.CylinderGeometry(0.18, 0.28, 9.5, 6));
+  const poleMat = trackMat(new THREE.MeshStandardMaterial({ color: 0x334155, metalness: 0.6, roughness: 0.4 }));
+  const bulbGeo = trackGeo(new THREE.SphereGeometry(0.75, 8, 8));
+  const bulbMat = trackMat(new THREE.MeshBasicMaterial({ color: 0x67e8f9 }));
 
-    const grassGeo = getCachedGeometry(`grass_${size}`, () => new THREE.BoxGeometry(size * 0.92, 0.2, size * 0.92));
-    const grass = new THREE.Mesh(grassGeo, parkGrassMat);
-    grass.position.set(px, 1.6, pz);
-    grass.receiveShadow = true;
-    cityGroup.add(grass);
+  const poles = new THREE.InstancedMesh(poleGeo, poleMat, lampPositions.length);
+  const bulbs = new THREE.InstancedMesh(bulbGeo, bulbMat, lampPositions.length);
+  lampPositions.forEach(([lx, lz], idx) => {
+    _scale.set(1, 1, 1);
+    _vec3.set(lx, 4.75, lz);
+    _mat4.compose(_vec3, _quat.identity(), _scale);
+    poles.setMatrixAt(idx, _mat4);
 
-    const treeCount = Math.floor(Math.random() * 7) + 5;
-    for (let i = 0; i < treeCount; i++) {
-      createTree(px + (Math.random() - 0.5) * size * 0.78, pz + (Math.random() - 0.5) * size * 0.78);
-    }
-
-    if (Math.random() < 0.35) {
-      createFountain(px, pz);
-    }
-  }
-
-  function createTree(tx, tz) {
-    const trunkGeo = getCachedGeometry('treeTrunk', () => new THREE.CylinderGeometry(0.4, 0.65, 4, 7));
-    const trunkMat = getCachedMaterial('treeTrunkMat', () => new THREE.MeshStandardMaterial({ color: 0x2d1a0f, roughness: 0.9 }));
-    const trunk = new THREE.Mesh(trunkGeo, trunkMat);
-    trunk.position.set(tx, 3, tz);
-    trunk.castShadow = true;
-    cityGroup.add(trunk);
-
-    const foliageGeo = getCachedGeometry('treeFoliage', () => new THREE.ConeGeometry(2.5, 7, 8));
-    const foliageMat = getCachedMaterial('treeFoliageMat', () => new THREE.MeshStandardMaterial({ color: 0x0a3a14, roughness: 0.8 }));
-    const foliage = new THREE.Mesh(foliageGeo, foliageMat);
-    foliage.position.set(tx, 7.5, tz);
-    foliage.castShadow = true;
-    cityGroup.add(foliage);
-  }
-
-  function createFountain(px, pz) {
-    const fountainGeo = getCachedGeometry('fountain', () => new THREE.CylinderGeometry(1.8, 2.4, 0.6, 18));
-    const fountainMat = getCachedMaterial('fountainMat', () => new THREE.MeshStandardMaterial({ color: 0x1a3a5a, metalness: 0.65, roughness: 0.15 }));
-    const fountain = new THREE.Mesh(fountainGeo, fountainMat);
-    fountain.position.set(px, 0.9, pz);
-    cityGroup.add(fountain);
-
-    const waterGeo = getCachedGeometry('fountainWater', () => new THREE.CylinderGeometry(1.6, 1.6, 0.15, 18));
-    const waterMat = getCachedMaterial('fountainWaterMat', () => new THREE.MeshBasicMaterial({ color: CITY_CONFIG.colors.waterSurface, transparent: true, opacity: 0.7 }));
-    const water = new THREE.Mesh(waterGeo, waterMat);
-    water.position.set(px, 1.25, pz);
-    cityGroup.add(water);
-    fountain.userData.water = water;
-
-    const light = new THREE.PointLight(CITY_CONFIG.colors.streetlightGlow, 0.8, 20, 2);
-    light.position.set(px, 2, pz);
-    cityGroup.add(light);
-    fountain.userData.light = light;
-  }
-
-  function createRoadNetwork() {
-    const roadGeo = getCachedGeometry('roadSeg', () => new THREE.BoxGeometry(roadWidth, 0.25, gridSize * (blockSize + roadWidth)));
-    const lineGeo = getCachedGeometry('roadLine', () => new THREE.BoxGeometry(0.3, 0.26, blockSize * 0.78));
-
-    for (let i = 0; i <= gridSize; i++) {
-      const pos = i * (blockSize + roadWidth) - halfGrid + roadWidth / 2;
-
-      const roadX = new THREE.Mesh(roadGeo, roadMat);
-      roadX.rotation.z = Math.PI / 2;
-      roadX.position.set(pos, 0.125, 0);
-      roadX.receiveShadow = true;
-      cityGroup.add(roadX);
-
-      const roadZ = new THREE.Mesh(roadGeo, roadMat);
-      roadZ.position.set(0, 0.125, pos);
-      roadZ.receiveShadow = true;
-      cityGroup.add(roadZ);
-
-      if (i < gridSize) {
-        for (let j = 0; j < gridSize; j++) {
-          const blockPos = j * (blockSize + roadWidth) - halfGrid + blockSize / 2 + roadWidth;
-          const lineX = new THREE.Mesh(lineGeo, roadLineMat);
-          lineX.position.set(pos, 0.14, blockPos);
-          cityGroup.add(lineX);
-          const lineZ = new THREE.Mesh(lineGeo, roadLineMat);
-          lineZ.rotation.y = Math.PI / 2;
-          lineZ.position.set(blockPos, 0.14, pos);
-          cityGroup.add(lineZ);
-        }
-      }
-    }
-
-    const crosswalkGeo = getCachedGeometry('crosswalk', () => new THREE.BoxGeometry(roadWidth + 1.5, 0.14, 3));
-    const crosswalkMat = getCachedMaterial('crosswalkMat', () => new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.35 }));
-
-    for (let i = 0; i <= gridSize; i++) {
-      const pos = i * (blockSize + roadWidth) - halfGrid + roadWidth / 2;
-      const cw1 = new THREE.Mesh(crosswalkGeo, crosswalkMat);
-      cw1.rotation.z = Math.PI / 2;
-      cw1.position.set(pos, 0.15, 0);
-      cityGroup.add(cw1);
-      const cw2 = new THREE.Mesh(crosswalkGeo, crosswalkMat);
-      cw2.position.set(0, 0.15, pos);
-      cityGroup.add(cw2);
-    }
-
-    const sidewalkGeo = getCachedGeometry('sidewalkSeg', () => new THREE.BoxGeometry(3.5, 0.18, gridSize * (blockSize + roadWidth)));
-    const sidewalkMat2 = getCachedMaterial('sidewalkMat2', () => new THREE.MeshStandardMaterial({ color: CITY_CONFIG.colors.sidewalk, roughness: 0.78 }));
-    for (let i = 0; i <= gridSize; i++) {
-      const pos = i * (blockSize + roadWidth) - halfGrid + roadWidth / 2;
-      const offset = roadWidth / 2 + 1.75;
-      const sw1 = new THREE.Mesh(sidewalkGeo, sidewalkMat2);
-      sw1.rotation.z = Math.PI / 2;
-      sw1.position.set(pos, 0.18, offset);
-      sw1.receiveShadow = true;
-      cityGroup.add(sw1);
-      const sw2 = new THREE.Mesh(sidewalkGeo, sidewalkMat2);
-      sw2.rotation.z = Math.PI / 2;
-      sw2.position.set(pos, 0.18, -offset);
-      sw2.receiveShadow = true;
-      cityGroup.add(sw2);
-      const sw3 = new THREE.Mesh(sidewalkGeo, sidewalkMat2);
-      sw3.position.set(offset, 0.18, pos);
-      sw3.receiveShadow = true;
-      cityGroup.add(sw3);
-      const sw4 = new THREE.Mesh(sidewalkGeo, sidewalkMat2);
-      sw4.position.set(-offset, 0.18, pos);
-      sw4.receiveShadow = true;
-      cityGroup.add(sw4);
-    }
-  }
-
-  function createStreetlights() {
-    const poleGeo = getCachedGeometry('pole', () => new THREE.CylinderGeometry(0.14, 0.26, 11, 8));
-    const poleMat = getCachedMaterial('poleMat', () => new THREE.MeshStandardMaterial({ color: 0x16243a, metalness: 0.55, roughness: 0.35 }));
-    const headGeo = getCachedGeometry('lightHead', () => new THREE.BoxGeometry(3.2, 0.5, 1));
-    const headMat = getCachedMaterial('lightHeadMat', () => new THREE.MeshStandardMaterial({ color: 0x16243a, metalness: 0.45, roughness: 0.35 }));
-    const glowMat = getCachedMaterial('lightGlow', () => new THREE.MeshBasicMaterial({ color: CITY_CONFIG.colors.streetlightGlow, transparent: true, opacity: 0.3 }));
-    const glowGeo = getCachedGeometry('glowSphere', () => new THREE.SphereGeometry(4, 10, 10));
-
-    for (let gx = 0; gx <= gridSize; gx++) {
-      for (let gz = 0; gz <= gridSize; gz++) {
-        if (Math.random() < 0.6) continue;
-        const x = gx * (blockSize + roadWidth) - halfGrid;
-        const z = gz * (blockSize + roadWidth) - halfGrid;
-        const offsets = [
-          [roadWidth / 2 + 3, roadWidth / 2 + 3],
-          [-roadWidth / 2 - 3, roadWidth / 2 + 3],
-          [roadWidth / 2 + 3, -roadWidth / 2 - 3],
-          [-roadWidth / 2 - 3, -roadWidth / 2 - 3],
-        ];
-        offsets.forEach(([ox, oz]) => {
-          const pole = new THREE.Mesh(poleGeo, poleMat);
-          pole.position.set(x + ox, 5.5, z + oz);
-          pole.castShadow = true;
-          cityGroup.add(pole);
-
-          const head = new THREE.Mesh(headGeo, headMat);
-          head.position.set(x + ox, 11.2, z + oz);
-          cityGroup.add(head);
-
-          const glow = new THREE.Mesh(glowGeo, glowMat);
-          glow.position.set(x + ox, 11, z + oz);
-          cityGroup.add(glow);
-
-          const pointLight = new THREE.PointLight(CITY_CONFIG.colors.streetlightGlow, 0.7, 24, 2);
-          pointLight.position.set(x + ox, 11, z + oz);
-          cityGroup.add(pointLight);
-        });
-      }
-    }
-  }
-
-  function createAmbientDetails() {
-    const benchGeo = getCachedGeometry('benchSeat', () => new THREE.BoxGeometry(2.8, 0.35, 0.6));
-    const benchMat = getCachedMaterial('benchMat', () => new THREE.MeshStandardMaterial({ color: 0x1a2a3a, roughness: 0.7 }));
-    const legGeo = getCachedGeometry('benchLeg', () => new THREE.BoxGeometry(0.25, 0.7, 0.25));
-    const legMat = getCachedMaterial('benchLegMat', () => new THREE.MeshStandardMaterial({ color: 0x16243a, metalness: 0.55 }));
-
-    for (let gx = 0; gx <= gridSize; gx++) {
-      for (let gz = 0; gz <= gridSize; gz++) {
-        if (Math.random() < 0.82) continue;
-        const x = gx * (blockSize + roadWidth) - halfGrid;
-        const z = gz * (blockSize + roadWidth) - halfGrid;
-        const bench = new THREE.Group();
-        const seat = new THREE.Mesh(benchGeo, benchMat);
-        seat.position.y = 0.9;
-        bench.add(seat);
-        const leg1 = new THREE.Mesh(legGeo, legMat);
-        leg1.position.set(-1.1, 0.35, 0);
-        bench.add(leg1);
-        const leg2 = new THREE.Mesh(legGeo, legMat);
-        leg2.position.set(1.1, 0.35, 0);
-        bench.add(leg2);
-        bench.position.set(x + (Math.random() - 0.5) * roadWidth, 0, z + (Math.random() - 0.5) * roadWidth);
-        bench.rotation.y = Math.random() * Math.PI * 2;
-        cityGroup.add(bench);
-      }
-    }
-  }
-}
-
-function createMarkerSystem() {
-  markerGroup = new THREE.Group();
-  markerGroup.name = 'markers';
-  scene.add(markerGroup);
-}
-
-function createLabelSystem() {
-  labelGroup = new THREE.Group();
-  labelGroup.name = 'labels';
-  scene.add(labelGroup);
+    _vec3.set(lx, 9.8, lz);
+    _mat4.compose(_vec3, _quat.identity(), _scale);
+    bulbs.setMatrixAt(idx, _mat4);
+  });
+  poles.computeBoundingSphere();
+  bulbs.computeBoundingSphere();
+  cityGroup.add(poles, bulbs);
 }
 
 function createVehicles() {
   vehicleGroup = new THREE.Group();
-  vehicleGroup.name = 'vehicles';
+  vehicleGroup.name = 'transit-vehicles';
   scene.add(vehicleGroup);
 
-  const vehicleGeo = getCachedGeometry('vehicleBody', () => new THREE.BoxGeometry(3, 1.2, 5.8));
-  const taillightGeo = getCachedGeometry('taillight', () => new THREE.BoxGeometry(2.8, 0.4, 0.2));
-  const headlightGeo = getCachedGeometry('headlight', () => new THREE.SphereGeometry(0.5, 8, 8));
-
-  const roadPositions = [];
   const { gridSize, blockSize, roadWidth } = CITY_CONFIG;
-  const halfGrid = (gridSize * (blockSize + roadWidth)) / 2;
+  const step = blockSize + roadWidth;
+  const half = (gridSize * step) / 2;
 
-  for (let i = 0; i <= gridSize; i++) {
-    const pos = i * (blockSize + roadWidth) - halfGrid + roadWidth / 2;
-    roadPositions.push({ axis: 'x', coord: pos, lanes: 2 });
-    roadPositions.push({ axis: 'z', coord: pos, lanes: 2 });
-  }
+  const chassisGeo = trackGeo(new THREE.BoxGeometry(2.6, 1.0, 5.2));
+  const cabinGeo = trackGeo(new THREE.BoxGeometry(2.1, 0.85, 2.6));
+  const lightGeo = trackGeo(new THREE.BoxGeometry(2.0, 0.3, 0.2));
 
-  const vehicleCount = reducedMotion ? 8 : 18;
-  for (let i = 0; i < vehicleCount; i++) {
-    const road = roadPositions[Math.floor(Math.random() * roadPositions.length)];
-    const vehicle = new THREE.Group();
+  const chassisMatA = trackMat(new THREE.MeshStandardMaterial({ color: 0x0ea5e9, metalness: 0.5, roughness: 0.3 }));
+  const chassisMatB = trackMat(new THREE.MeshStandardMaterial({ color: 0xf59e0b, metalness: 0.4, roughness: 0.35 }));
+  const cabinMat = trackMat(new THREE.MeshStandardMaterial({ color: 0x0f172a, metalness: 0.8, roughness: 0.15 }));
+  const headMat = trackMat(new THREE.MeshBasicMaterial({ color: 0xe0f2fe }));
+  const tailMat = trackMat(new THREE.MeshBasicMaterial({ color: 0xf43f5e }));
 
-    const isCool = Math.random() < 0.6;
-    const vehicleMat = getCachedMaterial(`vehicle_${isCool ? 'cool' : 'warm'}`, () => new THREE.MeshStandardMaterial({
-      color: isCool ? CITY_CONFIG.colors.vehicle : CITY_CONFIG.colors.vehicleWarm,
-      metalness: 0.55,
-      roughness: 0.3,
-      emissive: isCool ? CITY_CONFIG.colors.vehicle : CITY_CONFIG.colors.vehicleWarm,
-      emissiveIntensity: 0.3,
-    }));
-    const taillightMat = getCachedMaterial('taillightMat', () => new THREE.MeshBasicMaterial({ color: CITY_CONFIG.colors.vehicleTaillight, transparent: true, opacity: 0.85 }));
-    const headlightMat = getCachedMaterial('headlightMat', () => new THREE.MeshBasicMaterial({ color: 0xffffee, transparent: true, opacity: 0 }));
+  const count = 16;
+  for (let i = 0; i < count; i++) {
+    const car = new THREE.Group();
+    const isTransit = i % 3 === 0;
+    const body = new THREE.Mesh(chassisGeo, isTransit ? chassisMatB : chassisMatA);
+    body.position.y = 0.7;
+    const cabin = new THREE.Mesh(cabinGeo, cabinMat);
+    cabin.position.set(0, 1.5, -0.2);
+    const head = new THREE.Mesh(lightGeo, headMat);
+    head.position.set(0, 0.75, 2.62);
+    const tail = new THREE.Mesh(lightGeo, tailMat);
+    tail.position.set(0, 0.75, -2.62);
+    car.add(body, cabin, head, tail);
 
-    const body = new THREE.Mesh(vehicleGeo, vehicleMat);
-    body.castShadow = true;
-    vehicle.add(body);
+    const isX = i % 2 === 0;
+    const laneIdx = (i * 2) % (gridSize + 1);
+    const roadCoord = laneIdx * step - half;
+    const dir = i % 4 < 2 ? 1 : -1;
+    const laneOffset = dir * 3.2;
+    const startOffset = ((i * 53) % (gridSize * step)) - half;
 
-    const taillight = new THREE.Mesh(taillightGeo, taillightMat);
-    taillight.position.set(0, 0.7, -3);
-    vehicle.add(taillight);
-    vehicle.userData.taillight = taillight;
-
-    const headlight = new THREE.Mesh(headlightGeo, headlightMat);
-    headlight.position.set(0, 0.7, 3);
-    vehicle.add(headlight);
-    vehicle.userData.headlight = headlight;
-
-    const isXAxis = road.axis === 'x';
-    const laneOffset = (Math.random() - 0.5) * 3.5;
-    const start = isXAxis ? -halfGrid - 60 : road.coord + laneOffset;
-    const fixed = isXAxis ? road.coord + laneOffset : -halfGrid - 60;
-
-    vehicle.position.set(
-      isXAxis ? start : fixed,
-      1.6,
-      isXAxis ? fixed : start
-    );
-    vehicle.rotation.y = isXAxis ? 0 : Math.PI / 2;
-
-    const direction = Math.random() < 0.5 ? 1 : -1;
-    if (direction === -1) {
-      vehicle.rotation.y += Math.PI;
-      vehicle.position.set(
-        isXAxis ? halfGrid + 60 : fixed,
-        1.6,
-        isXAxis ? fixed : halfGrid + 60
-      );
+    if (isX) {
+      car.position.set(startOffset, 0.25, roadCoord + laneOffset);
+      car.rotation.y = dir === 1 ? Math.PI / 2 : -Math.PI / 2;
+    } else {
+      car.position.set(roadCoord + laneOffset, 0.25, startOffset);
+      car.rotation.y = dir === 1 ? 0 : Math.PI;
     }
 
-    vehicle.userData = {
-      speed: 0.5 + Math.random() * 0.8,
-      axis: road.axis,
-      direction,
-      roadCoord: road.coord,
-      laneOffset,
-      bounds: halfGrid + 70,
-      taillight: taillight,
-      headlight: headlight,
-      isXAxis,
+    car.userData = {
+      isX,
+      dir,
+      speed: 14 + (i % 5) * 4,
+      bounds: half + 18,
     };
-    vehicleGroup.add(vehicle);
+    vehicleGroup.add(car);
   }
-}
-
-function updateMarkers(reports, filter) {
-  if (!markerGroup) return;
-  currentReports = reports;
-  mapFilter = filter;
-
-  while (markerGroup.children.length > 0) {
-    const child = markerGroup.children[0];
-    markerGroup.remove(child);
-    disposeObject(child);
-  }
-  clearLabels();
-
-  const { jaipurBounds } = CITY_CONFIG;
-  const { gridSize, blockSize, roadWidth } = CITY_CONFIG;
-  const worldSize = gridSize * (blockSize + roadWidth);
-  const halfWorld = worldSize / 2;
-
-  reports.forEach((report, index) => {
-    if (!report.lat || !report.lon) return;
-
-    const shouldShow =
-      filter === 'all' ||
-      (filter === 'open' && report.status !== 'Resolved') ||
-      (filter === 'resolved' && report.status === 'Resolved');
-    if (!shouldShow) return;
-
-    const lat = report.lat;
-    const lon = report.lon;
-
-    const latNorm = (lat - jaipurBounds.latMin) / (jaipurBounds.latMax - jaipurBounds.latMin);
-    const lonNorm = (lon - jaipurBounds.lonMin) / (jaipurBounds.lonMax - jaipurBounds.lonMin);
-
-    const x = (lonNorm - 0.5) * worldSize;
-    const z = (0.5 - latNorm) * worldSize;
-
-    if (x < -halfWorld || x > halfWorld || z < -halfWorld || z > halfWorld) return;
-
-    const color = getMarkerColor(report);
-    const marker = createMarker(x, z, color, report, index);
-    markerGroup.add(marker);
-
-    createLabel(x, z, report);
-  });
 }
 
 function getMarkerColor(report) {
-  if (report.status === 'Resolved') return CITY_CONFIG.colors.markerLow;
-  const priority = report.priority || 'Normal';
-  if (priority === 'Critical' || priority === 'High') return CITY_CONFIG.colors.markerHigh;
-  return CITY_CONFIG.colors.markerMedium;
+  if (report.status === 'Resolved') return CITY_CONFIG.colors.markerResolved;
+  if (report.priority === 'Critical') return CITY_CONFIG.colors.markerCritical;
+  if (report.priority === 'High') return CITY_CONFIG.colors.markerHigh;
+  return CITY_CONFIG.colors.markerNormal;
 }
 
-function createMarker(x, z, color, report, index) {
+function createIssueBeacon(x, z, color, report) {
   const group = new THREE.Group();
-  group.position.set(x, 0, z);
-  group.userData = { report, baseY: 7, animOffset: Math.random() * Math.PI * 2, index };
+  group.position.set(x, 0.4, z);
 
-  const pulseGeo = getCachedGeometry('markerPulse', () => new THREE.RingGeometry(3.5, 6, 18));
-  const pulseMat = getCachedMaterial(`pulse_${color}`, () => new THREE.MeshBasicMaterial({
-    color, transparent: true, opacity: 0.4, side: THREE.DoubleSide, depthWrite: false,
+  // 1. Ground halo ring
+  const ringGeo = trackGeo(new THREE.RingGeometry(4.0, 6.2, 24));
+  const ringMat = trackMat(new THREE.MeshBasicMaterial({
+    color,
+    transparent: true,
+    opacity: 0.55,
+    side: THREE.DoubleSide,
+    depthWrite: false,
   }));
-  const pulse = new THREE.Mesh(pulseGeo, pulseMat);
-  pulse.rotation.x = -Math.PI / 2;
-  pulse.position.y = 0.4;
-  group.add(pulse);
-  group.userData.pulse = pulse;
+  const ring = new THREE.Mesh(ringGeo, ringMat);
+  ring.rotation.x = -Math.PI / 2;
+  ring.position.y = 0.2;
 
-  const markerGeo = getCachedGeometry('markerCone', () => new THREE.ConeGeometry(2.5, 8.5, 10));
-  const markerMat = getCachedMaterial(`marker_${color}`, () => new THREE.MeshStandardMaterial({
-    color, emissive: color, emissiveIntensity: 0.7,
-    metalness: 0.28, roughness: 0.3,
+  // 2. Vertical signal stem
+  const stemGeo = trackGeo(new THREE.CylinderGeometry(0.35, 0.35, 22, 8));
+  const stemMat = trackMat(new THREE.MeshBasicMaterial({
+    color,
+    transparent: true,
+    opacity: 0.45,
   }));
-  const marker = new THREE.Mesh(markerGeo, markerMat);
-  marker.position.y = 7;
-  marker.castShadow = true;
-  group.add(marker);
+  const stem = new THREE.Mesh(stemGeo, stemMat);
+  stem.position.y = 11;
 
-  const glowGeo = getCachedGeometry('markerGlow', () => new THREE.SphereGeometry(1.5, 10, 10));
-  const glowMat = getCachedMaterial(`glow_${color}`, () => new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.55, depthWrite: false }));
-  const glow = new THREE.Mesh(glowGeo, glowMat);
-  glow.position.y = 11.5;
-  group.add(glow);
+  // 3. Elevated diamond beacon
+  const pinGeo = trackGeo(new THREE.OctahedronGeometry(4.2, 0));
+  const pinMat = trackMat(new THREE.MeshStandardMaterial({
+    color,
+    emissive: color,
+    emissiveIntensity: 0.65,
+    roughness: 0.25,
+    metalness: 0.35,
+  }));
+  const pin = new THREE.Mesh(pinGeo, pinMat);
+  pin.position.y = 24;
+  pin.castShadow = true;
 
-  const beaconGeo = getCachedGeometry('beacon', () => new THREE.CylinderGeometry(0.18, 0.18, 14, 7));
-  const beaconMat = getCachedMaterial(`beacon_${color}`, () => new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.22 }));
-  const beacon = new THREE.Mesh(beaconGeo, beaconMat);
-  beacon.position.y = 7;
-  group.add(beacon);
+  // 4. Invisible larger hit proxy for easy mouse/touch clicking
+  const hitGeo = trackGeo(new THREE.CylinderGeometry(7, 7, 32, 8));
+  const hitMat = trackMat(new THREE.MeshBasicMaterial({ visible: false }));
+  const hit = new THREE.Mesh(hitGeo, hitMat);
+  hit.position.y = 16;
 
-  const pointLight = new THREE.PointLight(color, 1.5, 22, 2);
-  pointLight.position.set(0, 11.5, 0);
-  group.add(pointLight);
+  group.add(ring, stem, pin, hit);
+  group.userData = {
+    type: 'issue',
+    report,
+    ring,
+    pin,
+    hit,
+    phase: Math.random() * Math.PI * 2,
+  };
+  hit.userData = { markerGroup: group };
+  pin.userData = { markerGroup: group };
+  markerHitTargets.push(hit);
 
   return group;
 }
 
-function createLabel(x, z, report) {
-  const div = document.createElement('div');
-  div.className = 'marker-label';
-  div.style.cssText = `
-    position: absolute;
-    pointer-events: none;
-    padding: 8px 12px;
-    background: rgba(10, 18, 36, 0.96);
-    border: 1px solid rgba(0, 245, 212, 0.35);
-    border-radius: 8px;
-    font: 500 11.5px 'DM Sans', sans-serif;
-    color: #f0f5ff;
-    white-space: nowrap;
-    box-shadow: 0 6px 24px rgba(0,0,0,0.5), 0 0 16px rgba(0, 245, 212, 0.15);
-    opacity: 0;
-    transform: translate(-50%, -100%) translateY(10px);
-    transition: opacity 0.18s ease, transform 0.18s ease;
-    z-index: 10;
-    backdrop-filter: blur(12px);
-  `;
-  div.innerHTML = '<strong style="color:#00f5d4">' + escapeHTML(report.title) + '</strong><br><span style="color:#9ab0d1;font-size:10.5px">' + escapeHTML(report.location) + ' \u00b7 ' + escapeHTML(report.id) + '</span>';
+function createClusterBeacon(x, z, clusterReports) {
+  const group = new THREE.Group();
+  group.position.set(x, 0.4, z);
 
-  const container = canvasContainer;
-  container.appendChild(div);
+  const hasCritical = clusterReports.some((r) => r.priority === 'Critical' && r.status !== 'Resolved');
+  const color = hasCritical ? CITY_CONFIG.colors.markerCritical : CITY_CONFIG.colors.cluster;
 
-  const labelGroup3d = new THREE.Group();
-  labelGroup3d.position.set(x, 14, z);
-  labelGroup3d.userData = { report, labelDiv: div };
-  markerGroup.add(labelGroup3d);
-  markerLabels.set(report.id, labelGroup3d);
+  const baseGeo = trackGeo(new THREE.RingGeometry(7, 10, 28));
+  const baseMat = trackMat(new THREE.MeshBasicMaterial({
+    color,
+    transparent: true,
+    opacity: 0.6,
+    side: THREE.DoubleSide,
+    depthWrite: false,
+  }));
+  const ring = new THREE.Mesh(baseGeo, baseMat);
+  ring.rotation.x = -Math.PI / 2;
+  ring.position.y = 0.2;
 
-  requestAnimationFrame(() => updateLabelPosition(labelGroup3d));
+  const orbGeo = trackGeo(new THREE.IcosahedronGeometry(6.5, 1));
+  const orbMat = trackMat(new THREE.MeshStandardMaterial({
+    color,
+    emissive: color,
+    emissiveIntensity: 0.55,
+    roughness: 0.2,
+    metalness: 0.5,
+  }));
+  const pin = new THREE.Mesh(orbGeo, orbMat);
+  pin.position.y = 22;
+
+  const hitGeo = trackGeo(new THREE.CylinderGeometry(10, 10, 34, 8));
+  const hitMat = trackMat(new THREE.MeshBasicMaterial({ visible: false }));
+  const hit = new THREE.Mesh(hitGeo, hitMat);
+  hit.position.y = 17;
+
+  group.add(ring, pin, hit);
+  group.userData = {
+    type: 'cluster',
+    reports: clusterReports,
+    ring,
+    pin,
+    hit,
+    phase: 0,
+  };
+  hit.userData = { markerGroup: group };
+  markerHitTargets.push(hit);
+
+  return group;
 }
 
-function updateLabelPosition(group) {
-  if (!group || !group.parent || !renderer) {
-    if (group && group.userData.labelDiv) group.userData.labelDiv.remove();
+function filterReports(reports) {
+  const query = (activeFilters.search || '').trim().toLowerCase();
+  return (reports || []).filter((r) => {
+    if (activeFilters.status === 'open' && r.status === 'Resolved') return false;
+    if (activeFilters.status === 'resolved' && r.status !== 'Resolved') return false;
+    if (activeFilters.category !== 'all' && r.category !== activeFilters.category) return false;
+    if (activeFilters.severity !== 'all' && r.priority !== activeFilters.severity) return false;
+    if (query) {
+      const hay = `${r.title} ${r.location} ${r.id} ${r.category}`.toLowerCase();
+      if (!hay.includes(query)) return false;
+    }
+    return true;
+  });
+}
+
+function rebuildMarkers() {
+  if (!markerGroup) return;
+  while (markerGroup.children.length > 0) {
+    markerGroup.remove(markerGroup.children[0]);
+  }
+  markerHitTargets = [];
+  selectedMarkerGroup = null;
+
+  const filtered = filterReports(allReports);
+  const mapped = filtered.map((report) => {
+    const pos = geoToWorld(report);
+    return { report, x: pos.x, z: pos.z, approximate: pos.approximate };
+  });
+
+  if (activeFilters.clustering && mapped.length > 1) {
+    const clusters = [];
+    const clusterRadius = 46;
+
+    mapped.forEach((item) => {
+      const existing = clusters.find((c) => Math.hypot(c.cx - item.x, c.cz - item.z) < clusterRadius);
+      if (existing) {
+        existing.items.push(item);
+        existing.cx = existing.items.reduce((s, it) => s + it.x, 0) / existing.items.length;
+        existing.cz = existing.items.reduce((s, it) => s + it.z, 0) / existing.items.length;
+      } else {
+        clusters.push({ cx: item.x, cz: item.z, items: [item] });
+      }
+    });
+
+    clusters.forEach((cluster) => {
+      if (cluster.items.length === 1) {
+        const only = cluster.items[0];
+        markerGroup.add(createIssueBeacon(only.x, only.z, getMarkerColor(only.report), only.report));
+      } else {
+        markerGroup.add(createClusterBeacon(cluster.cx, cluster.cz, cluster.items.map((i) => i.report)));
+      }
+    });
+  } else {
+    mapped.forEach((item) => {
+      markerGroup.add(createIssueBeacon(item.x, item.z, getMarkerColor(item.report), item.report));
+    });
+  }
+}
+
+function createTooltip() {
+  if (hoverTooltip || !canvasContainer) return;
+  hoverTooltip = document.createElement('div');
+  hoverTooltip.className = 'twin-hover-tooltip';
+  hoverTooltip.hidden = true;
+  canvasContainer.appendChild(hoverTooltip);
+}
+
+function showTooltip(clientX, clientY, title, subtitle) {
+  if (!hoverTooltip || !canvasContainer) return;
+  const rect = canvasContainer.getBoundingClientRect();
+  hoverTooltip.textContent = '';
+  const strong = document.createElement('strong');
+  strong.textContent = title;
+  const span = document.createElement('span');
+  span.textContent = subtitle;
+  hoverTooltip.appendChild(strong);
+  hoverTooltip.appendChild(span);
+
+  const left = Math.min(rect.width - 220, Math.max(12, clientX - rect.left + 14));
+  const top = Math.min(rect.height - 72, Math.max(12, clientY - rect.top - 18));
+  hoverTooltip.style.left = `${left}px`;
+  hoverTooltip.style.top = `${top}px`;
+  hoverTooltip.hidden = false;
+}
+
+function hideTooltip() {
+  if (hoverTooltip) hoverTooltip.hidden = true;
+}
+
+function focusWorldPoint(x, y, z, distanceOffset = 115) {
+  cameraTransition = {
+    pos: new THREE.Vector3(x + distanceOffset, y + distanceOffset * 0.85, z + distanceOffset),
+    target: new THREE.Vector3(x, y, z),
+  };
+}
+
+function handlePointerMove(event) {
+  if (!isInitialized || !canvasContainer || !camera) return;
+  const now = performance.now();
+  if (now - lastRaycastTime < 45) return;
+  lastRaycastTime = now;
+
+  const rect = canvasContainer.getBoundingClientRect();
+  pointerNDC.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+  pointerNDC.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+  raycaster.setFromCamera(pointerNDC, camera);
+  const markerHits = raycaster.intersectObjects(markerHitTargets, false);
+
+  if (markerHits.length > 0) {
+    const mGroup = markerHits[0].object.userData.markerGroup;
+    hoveredTarget = mGroup;
+    canvasContainer.style.cursor = 'pointer';
+    if (mGroup.userData.type === 'cluster') {
+      showTooltip(
+        event.clientX,
+        event.clientY,
+        `${mGroup.userData.reports.length} civic issues in cluster`,
+        'Click to zoom in & expand'
+      );
+    } else {
+      const r = mGroup.userData.report;
+      showTooltip(event.clientX, event.clientY, r.title, `${r.location} · ${r.priority} · ${r.status}`);
+    }
     return;
   }
-  const vector = new THREE.Vector3();
-  group.getWorldPosition(vector);
-  vector.project(camera);
-  const rect = renderer.domElement.getBoundingClientRect();
-  const x = (vector.x * 0.5 + 0.5) * rect.width;
-  const y = (-vector.y * 0.5 + 0.5) * rect.height;
-  const div = group.userData.labelDiv;
-  if (div) {
-    div.style.left = x + 'px';
-    div.style.top = y + 'px';
+
+  const bldgHits = raycaster.intersectObjects(buildingHitTargets, false);
+  if (bldgHits.length > 0) {
+    const meta = bldgHits[0].object.userData.buildingMeta;
+    hoveredTarget = bldgHits[0].object;
+    canvasContainer.style.cursor = 'pointer';
+    showTooltip(event.clientX, event.clientY, meta.name, `${meta.zoneKind} · ${meta.floors} floors`);
+    return;
   }
-}
 
-function clearLabels() {
-  markerLabels.forEach((group) => {
-    if (group.userData.labelDiv) group.userData.labelDiv.remove();
-  });
-  markerLabels.clear();
-}
-
-function escapeHTML(value) {
-  return String(value)
-    .replace(/&/g, '&')
-    .replace(/</g, '<')
-    .replace(/>/g, '>')
-    .replace(/"/g, '"')
-    .replace(/'/g, '&apos;');
-}
-
-function animateMarkers(delta) {
-  if (!markerGroup) return;
-  const t = time;
-  markerGroup.children.forEach(marker => {
-    const offset = marker.userData.animOffset;
-    const markerTime = t + offset;
-
-    marker.children.forEach(child => {
-      if (child === marker.userData.pulse) {
-        const scale = 1 + Math.sin(markerTime * 2.2) * 0.2;
-        child.scale.setScalar(scale);
-        child.material.opacity = 0.4 + Math.sin(markerTime * 2.2) * 0.15;
-      }
-      if (child.geometry && child.geometry.type === 'CylinderGeometry' && child.geometry.parameters.heightTop === 0.18) {
-        child.rotation.y += delta * 0.4;
-      }
-    });
-
-    const bob = Math.sin(markerTime) * 0.3;
-    marker.position.y = bob;
-    marker.children.forEach(c => {
-      if (c.geometry && c.geometry.type === 'ConeGeometry') {
-        c.position.y = marker.userData.baseY + bob;
-      }
-    });
-  });
-
-  markerLabels.forEach((group) => {
-    updateLabelPosition(group);
-  });
-}
-
-function animateVehicles(delta) {
-  if (!vehicleGroup) return;
-  const { gridSize, blockSize, roadWidth } = CITY_CONFIG;
-  const halfGrid = (gridSize * (blockSize + roadWidth)) / 2;
-
-  vehicleGroup.children.forEach(vehicle => {
-    const data = vehicle.userData;
-    const move = data.speed * delta * 60 * data.direction;
-
-    if (data.isXAxis) {
-      vehicle.position.x += move;
-      if (vehicle.position.x > data.bounds) vehicle.position.x = -data.bounds;
-      if (vehicle.position.x < -data.bounds) vehicle.position.x = data.bounds;
-    } else {
-      vehicle.position.z += move;
-      if (vehicle.position.z > data.bounds) vehicle.position.z = -data.bounds;
-      if (vehicle.position.z < -data.bounds) vehicle.position.z = data.bounds;
-    }
-
-    const brakeIntensity = Math.abs(Math.sin(time * 5 * data.speed)) * 0.35;
-    data.taillight.material.opacity = 0.4 + brakeIntensity;
-    data.headlight.material.opacity = 0.2;
-  });
-}
-
-function onPointerMove(event) {
-  if (!isInitialized || !canvasContainer) return;
-  const rect = canvasContainer.getBoundingClientRect();
-  mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-  mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-  checkHover();
-}
-
-function checkHover() {
-  raycaster.setFromCamera(mouse, camera);
-  const intersects = raycaster.intersectObjects(markerGroup.children, true);
-
-  if (intersects.length > 0) {
-    let markerGroup3d = intersects[0].object;
-    while (markerGroup3d.parent && markerGroup3d.parent !== markerGroup) {
-      markerGroup3d = markerGroup3d.parent;
-    }
-    if (markerGroup3d !== hoveredMarker) {
-      if (hoveredMarker) setMarkerState(hoveredMarker, 'normal');
-      hoveredMarker = markerGroup3d;
-      setMarkerState(hoveredMarker, 'hover');
-      canvasContainer.style.cursor = 'pointer';
-      showLabel(hoveredMarker);
-    }
-  } else {
-    if (hoveredMarker) {
-      setMarkerState(hoveredMarker, 'normal');
-      hoveredMarker = null;
-    }
-    canvasContainer.style.cursor = 'grab';
-    hideAllLabels();
-  }
-}
-
-function setMarkerState(marker, state) {
-  marker.children.forEach(child => {
-    if (child.geometry && child.geometry.type === 'ConeGeometry') {
-      if (state === 'hover') {
-        child.scale.set(1.18, 1.18, 1.18);
-        child.material.emissiveIntensity = 1.1;
-      } else if (state === 'selected') {
-        child.scale.set(1.3, 1.3, 1.3);
-        child.material.emissiveIntensity = 1.4;
-      } else {
-        child.scale.set(1, 1, 1);
-        child.material.emissiveIntensity = 0.7;
-      }
-    }
-    if (child === marker.userData.pulse) {
-      child.material.opacity = state === 'hover' ? 0.7 : 0.4;
-      child.scale.setScalar(state === 'hover' ? 1.3 : 1);
-    }
-    if (child.geometry && child.geometry.type === 'SphereGeometry') {
-      child.material.opacity = state === 'hover' ? 0.8 : 0.55;
-      child.scale.setScalar(state === 'hover' ? 1.2 : 1);
-    }
-  });
-}
-
-function showLabel(marker) {
-  markerLabels.forEach((group) => {
-    if (group.userData.report === marker.userData.report) {
-      const div = group.userData.labelDiv;
-      if (div) {
-        div.style.opacity = '1';
-        div.style.transform = 'translate(-50%, -100%) translateY(0)';
-      }
-    }
-  });
-}
-
-function hideAllLabels() {
-  markerLabels.forEach((group) => {
-    if (group.userData.labelDiv) {
-      group.userData.labelDiv.style.opacity = '0';
-      group.userData.labelDiv.style.transform = 'translate(-50%, -100%) translateY(10px)';
-    }
-  });
-}
-
-function onClick(event) {
-  if (!hoveredMarker) return;
-  if (selectedMarker === hoveredMarker) {
-    selectedMarker = null;
-    setMarkerState(hoveredMarker, 'hover');
-    hideAllLabels();
-    showToast('Deselected ' + hoveredMarker.userData.report.id);
-  } else {
-    if (selectedMarker) setMarkerState(selectedMarker, 'normal');
-    selectedMarker = hoveredMarker;
-    setMarkerState(selectedMarker, 'selected');
-    showLabel(selectedMarker);
-    showMarkerDetail(selectedMarker.userData.report);
-  }
-}
-
-function onPointerLeave() {
-  if (hoveredMarker && hoveredMarker !== selectedMarker) {
-    setMarkerState(hoveredMarker, 'normal');
-    hoveredMarker = null;
-  }
+  hoveredTarget = null;
   canvasContainer.style.cursor = 'grab';
-  hideAllLabels();
+  hideTooltip();
 }
 
-let touchStartX = 0, touchStartY = 0;
-function onTouchStart(event) {
-  if (event.touches.length === 1) {
-    touchStartX = event.touches[0].clientX;
-    touchStartY = event.touches[0].clientY;
-  }
-}
-function onTouchMove(event) {
-  if (event.touches.length === 1) {
-    event.preventDefault();
-    const deltaX = event.touches[0].clientX - touchStartX;
-    const deltaY = event.touches[0].clientY - touchStartY;
-    if (controls) {
-      controls.enabled = false;
-      const rotateSpeed = 0.005;
-      controls.target.x -= deltaX * rotateSpeed;
-      controls.target.z -= deltaY * rotateSpeed;
-    }
-    touchStartX = event.touches[0].clientX;
-    touchStartY = event.touches[0].clientY;
-  }
-}
-function onTouchEnd(event) {
-  controls.enabled = true;
+function handleCanvasClick(event) {
+  if (!isInitialized || !canvasContainer || !camera) return;
   const rect = canvasContainer.getBoundingClientRect();
-  mouse.x = ((touchStartX - rect.left) / rect.width) * 2 - 1;
-  mouse.y = -((touchStartY - rect.top) / rect.height) * 2 + 1;
-  checkHover();
-  if (hoveredMarker) onClick();
+  pointerNDC.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+  pointerNDC.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+  raycaster.setFromCamera(pointerNDC, camera);
+  const markerHits = raycaster.intersectObjects(markerHitTargets, false);
+
+  if (markerHits.length > 0) {
+    const mGroup = markerHits[0].object.userData.markerGroup;
+    if (mGroup.userData.type === 'cluster') {
+      // Disable clustering temporarily when user clicks a cluster to inspect individual pins
+      activeFilters.clustering = false;
+      focusWorldPoint(mGroup.position.x, 8, mGroup.position.z, 95);
+      rebuildMarkers();
+      if (typeof callbacks.onSelectBuilding === 'function') {
+        callbacks.onSelectBuilding({
+          isClusterExpand: true,
+          count: mGroup.userData.reports.length,
+          reports: mGroup.userData.reports,
+        });
+      }
+      return;
+    }
+
+    selectedMarkerGroup = mGroup;
+    const report = mGroup.userData.report;
+    focusWorldPoint(mGroup.position.x, 10, mGroup.position.z, 105);
+    if (typeof callbacks.onSelectIssue === 'function') {
+      callbacks.onSelectIssue(report);
+    }
+    return;
+  }
+
+  const bldgHits = raycaster.intersectObjects(buildingHitTargets, false);
+  if (bldgHits.length > 0) {
+    const meta = bldgHits[0].object.userData.buildingMeta;
+    if (selectedBuildingMesh && selectedBuildingMesh.material?.emissive) {
+      selectedBuildingMesh.material.emissive.setHex(0x000000);
+    }
+    selectedBuildingMesh = meta.primaryMesh;
+    if (selectedBuildingMesh && selectedBuildingMesh.material?.emissive) {
+      selectedBuildingMesh.material.emissive.setHex(0x0b3b59);
+    }
+    const wp = _vec3;
+    bldgHits[0].object.getWorldPosition(wp);
+    focusWorldPoint(wp.x, 14, wp.z, 125);
+    if (typeof callbacks.onSelectBuilding === 'function') {
+      const nearby = allReports.filter((r) =>
+        String(r.location || '').toLowerCase().includes(meta.district.toLowerCase().split(' ')[0])
+      );
+      callbacks.onSelectBuilding({ ...meta, nearbyReports: nearby });
+    }
+  }
 }
 
-function showMarkerDetail(report) {
-  const priorityLabel = report.priority || 'Normal';
-  const statusLabel = report.status || 'Open';
-  showToast(report.id + ': ' + report.title + ' \u2014 ' + priorityLabel + ' \u00b7 ' + statusLabel);
+function handleResize() {
+  if (!renderer || !camera || !canvasContainer) return;
+  const w = Math.max(1, canvasContainer.clientWidth);
+  const h = Math.max(1, canvasContainer.clientHeight);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+  renderer.setSize(w, h);
 }
 
-function animate() {
-  animationId = requestAnimationFrame(animate);
-  const now = performance.now();
-  const delta = reducedMotion ? 0 : Math.min((now - lastTime) / 1000, 1/30);
-  lastTime = now;
-  time += delta;
+function afterDraw(cb) {
+  const gl = renderer?.getContext?.();
+  if (!gl || typeof gl.fenceSync !== 'function') {
+    frameId = window.setTimeout(cb, 80);
+    return;
+  }
+  const sync = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
+  gl.flush();
+  const poll = () => {
+    const state = sync && gl.getSyncParameter(sync, gl.SYNC_STATUS);
+    if (state === gl.UNSIGNALED) {
+      frameId = window.setTimeout(poll, 6);
+    } else {
+      if (sync) gl.deleteSync(sync);
+      frameId = window.setTimeout(cb, 80);
+    }
+  };
+  frameId = window.setTimeout(poll, 6);
+}
+
+function animate(now = performance.now()) {
+  if (!isInitialized || isPaused) return;
+  const delta = reducedMotion ? 0 : Math.min((now - (lastTimestamp || now)) / 1000, 0.05);
+  lastTimestamp = now;
+  elapsedTime += delta;
+
+  if (cameraTransition) {
+    const dampLambda = 4.5;
+    camera.position.x = THREE.MathUtils.damp(camera.position.x, cameraTransition.pos.x, dampLambda, delta || 0.016);
+    camera.position.y = THREE.MathUtils.damp(camera.position.y, cameraTransition.pos.y, dampLambda, delta || 0.016);
+    camera.position.z = THREE.MathUtils.damp(camera.position.z, cameraTransition.pos.z, dampLambda, delta || 0.016);
+    controls.target.x = THREE.MathUtils.damp(controls.target.x, cameraTransition.target.x, dampLambda, delta || 0.016);
+    controls.target.y = THREE.MathUtils.damp(controls.target.y, cameraTransition.target.y, dampLambda, delta || 0.016);
+    controls.target.z = THREE.MathUtils.damp(controls.target.z, cameraTransition.target.z, dampLambda, delta || 0.016);
+
+    if (camera.position.distanceTo(cameraTransition.pos) < 1.2) {
+      cameraTransition = null;
+    }
+  }
 
   if (controls) controls.update();
-  animateMarkers(delta);
-  animateVehicles(delta);
-  animateFountains(delta);
+
+  // Animate beacons
+  if (markerGroup && !reducedMotion) {
+    for (let i = 0; i < markerGroup.children.length; i++) {
+      const m = markerGroup.children[i];
+      const d = m.userData;
+      if (d.pin) {
+        d.pin.rotation.y += delta * 1.1;
+        d.pin.position.y = 22 + Math.sin(elapsedTime * 2.2 + (d.phase || 0)) * 1.6;
+      }
+      if (d.ring) {
+        const s = 1 + Math.sin(elapsedTime * 2.6 + (d.phase || 0)) * 0.16;
+        d.ring.scale.set(s, s, 1);
+      }
+    }
+  }
+
+  // Animate vehicles along arterial roads
+  if (vehicleGroup && !reducedMotion) {
+    for (let i = 0; i < vehicleGroup.children.length; i++) {
+      const car = vehicleGroup.children[i];
+      const u = car.userData;
+      const move = u.speed * delta * u.dir;
+      if (u.isX) {
+        car.position.x += move;
+        if (car.position.x > u.bounds) car.position.x = -u.bounds;
+        if (car.position.x < -u.bounds) car.position.x = u.bounds;
+      } else {
+        car.position.z += move;
+        if (car.position.z > u.bounds) car.position.z = -u.bounds;
+        if (car.position.z < -u.bounds) car.position.z = u.bounds;
+      }
+    }
+  }
+
+  // Animate Central Park fountain shimmer
+  if (fountainWater && !reducedMotion) {
+    fountainWater.scale.y = 0.85 + Math.sin(elapsedTime * 3.2) * 0.25;
+  }
+
   renderer.render(scene, camera);
+
+  if (isSoftwareGl) {
+    afterDraw(() => animate(performance.now()));
+  } else {
+    frameId = requestAnimationFrame(animate);
+  }
 }
 
-function animateFountains(delta) {
-  if (!cityGroup) return;
-  cityGroup.traverse(obj => {
-    if (obj.userData && obj.userData.water) {
-      const water = obj.userData.water;
-      water.scale.y = 0.8 + Math.sin(time * 3) * 0.2;
-      water.material.opacity = 0.6 + Math.sin(time * 4) * 0.1;
+export function initThreeCity(options = {}) {
+  callbacks = { ...callbacks, ...options };
+  canvasContainer = document.getElementById(options.containerId || 'city-3d');
+  if (!canvasContainer) return false;
+
+  if (isInitialized) {
+    handleResize();
+    if (isPaused) {
+      isPaused = false;
+      animate();
     }
-    if (obj.userData && obj.userData.light) {
-      obj.userData.light.intensity = 0.7 + Math.sin(time * 2.5) * 0.3;
+    return true;
+  }
+
+  if (!checkWebGLSupport()) {
+    if (typeof callbacks.onError === 'function') {
+      callbacks.onError('WebGL is unavailable in this browser. Switch to the 2D Leaflet map.');
+    }
+    return false;
+  }
+
+  reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  isSoftwareGl = detectSoftwareWebGL();
+
+  const width = Math.max(320, canvasContainer.clientWidth || 800);
+  const height = Math.max(320, canvasContainer.clientHeight || 520);
+
+  renderer = new THREE.WebGLRenderer({
+    antialias: !isSoftwareGl,
+    powerPreference: 'high-performance',
+  });
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.15;
+  renderer.setPixelRatio(isSoftwareGl ? 1 : Math.min(window.devicePixelRatio, 2));
+  renderer.setSize(width, height);
+  renderer.shadowMap.enabled = !isSoftwareGl;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+  canvasContainer.innerHTML = '';
+  canvasContainer.appendChild(renderer.domElement);
+  createTooltip();
+
+  renderer.domElement.addEventListener('webglcontextlost', (e) => {
+    e.preventDefault();
+    isPaused = true;
+    if (typeof callbacks.onError === 'function') {
+      callbacks.onError('3D WebGL context was suspended. Click Reset View or switch to 2D map.');
     }
   });
-}
 
-function onResize() {
-  if (!renderer || !camera || !canvasContainer) return;
-  const width = canvasContainer.clientWidth;
-  const height = canvasContainer.clientHeight;
-  const aspect = width / height;
-  const frustumSize = 240;
+  scene = new THREE.Scene();
+  scene.background = new THREE.Color(CITY_CONFIG.colors.sky);
+  scene.fog = new THREE.FogExp2(CITY_CONFIG.colors.fog, 0.00125);
 
-  camera.left = frustumSize * aspect / -2;
-  camera.right = frustumSize * aspect / 2;
-  camera.top = frustumSize / 2;
-  camera.bottom = frustumSize / -2;
-  camera.updateProjectionMatrix();
-  renderer.setSize(width, height);
-}
+  // Studio environment reflections for metallic/glass surfaces
+  const pmremGenerator = new THREE.PMREMGenerator(renderer);
+  scene.environment = pmremGenerator.fromScene(new RoomEnvironment(), 0.04).texture;
+  pmremGenerator.dispose();
 
-function disposeObject(obj) {
-  if (obj.geometry) obj.geometry.dispose();
-  if (obj.material) {
-    if (Array.isArray(obj.material)) {
-      obj.material.forEach(m => m.dispose());
-    } else {
-      obj.material.dispose();
-    }
+  camera = new THREE.PerspectiveCamera(44, width / height, 1, 2400);
+  camera.position.copy(CAMERA_PRESETS.overview.pos);
+
+  controls = new OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = !isSoftwareGl;
+  controls.dampingFactor = 0.06;
+  controls.enablePan = true;
+  controls.minDistance = 85;
+  controls.maxDistance = 680;
+  controls.maxPolarAngle = Math.PI / 2.1;
+  controls.minPolarAngle = Math.PI / 10;
+  controls.target.copy(CAMERA_PRESETS.overview.target);
+  controls.addEventListener('start', () => {
+    cameraTransition = null;
+  });
+
+  raycaster = new THREE.Raycaster();
+
+  setupLighting();
+  createCityEnvironment();
+
+  markerGroup = new THREE.Group();
+  markerGroup.name = 'issue-markers';
+  scene.add(markerGroup);
+
+  createVehicles();
+
+  if (options.reports) allReports = options.reports;
+  rebuildMarkers();
+
+  window.addEventListener('resize', handleResize);
+  renderer.domElement.addEventListener('pointermove', handlePointerMove);
+  renderer.domElement.addEventListener('pointerleave', hideTooltip);
+  renderer.domElement.addEventListener('click', handleCanvasClick);
+
+  isInitialized = true;
+  isPaused = false;
+  lastTimestamp = performance.now();
+  animate(lastTimestamp);
+
+  if (typeof callbacks.onReady === 'function') {
+    callbacks.onReady({
+      modelSource: 'procedural-jaipur-fallback',
+      softwareWebGL: isSoftwareGl,
+      buildingCount: buildingHitTargets.length / 2,
+    });
   }
-  obj.children.forEach(disposeObject);
+  return true;
 }
 
-function showFallback(message) {
-  canvasContainer.innerHTML = `
-    <div style="padding:32px;color:#fff;text-align:center;background:#081224;border-radius:16px;border:1px solid rgba(0,245,212,0.2)">
-      <div style="font-size:28px;margin-bottom:12px">\u26a0</div>
-      <p style="margin:0 0 12px; font-size:15px">${message}</p>
-      <p style="font-size:12.5px;color:#6b82a3;margin:0">Showing 2D map instead.</p>
-    </div>
-  `;
-  canvasContainer.style.display = 'block';
-  if (mapContainer) mapContainer.style.display = 'none';
-  if (toggleBtn) toggleBtn.style.display = 'none';
+export function updateReports(reports) {
+  allReports = Array.isArray(reports) ? reports : [];
+  if (isInitialized) rebuildMarkers();
 }
 
-function toggleView(show3D) {
-  getDomElements();
-  if (show3D) {
-    if (canvasContainer) canvasContainer.style.display = 'block';
-    if (mapContainer) mapContainer.style.display = 'none';
-    if (toggleBtn) {
-      toggleBtn.innerHTML = '\u25ab <span>2D</span>';
-      toggleBtn.title = 'Switch to 2D map';
-    }
-    if (!isInitialized) initThreeCity();
+export function setFilters(nextFilters = {}) {
+  activeFilters = { ...activeFilters, ...nextFilters };
+  if (isInitialized) rebuildMarkers();
+}
+
+export function setCameraPreset(presetName = 'overview') {
+  const preset = CAMERA_PRESETS[presetName] || CAMERA_PRESETS.overview;
+  cameraTransition = {
+    pos: preset.pos.clone(),
+    target: preset.target.clone(),
+  };
+}
+
+export function focusReport(reportId) {
+  if (!isInitialized) return;
+  const targetReport = allReports.find((r) => r.id === reportId);
+  if (!targetReport) return;
+  const pos = geoToWorld(targetReport);
+  focusWorldPoint(pos.x, 12, pos.z, 100);
+}
+
+export function setPaused(paused) {
+  isPaused = Boolean(paused);
+  if (!isPaused && isInitialized) {
+    lastTimestamp = performance.now();
+    animate(lastTimestamp);
   } else {
-    if (canvasContainer) canvasContainer.style.display = 'none';
-    if (mapContainer) mapContainer.style.display = 'block';
-    if (toggleBtn) {
-      toggleBtn.innerHTML = '\u25a7 <span>3D</span>';
-      toggleBtn.title = 'Switch to 3D city';
-    }
+    cancelAnimationFrame(frameId);
+    clearTimeout(frameId);
   }
 }
 
-function updateReports(reports, filter) {
-  currentReports = reports;
-  mapFilter = filter;
-  if (isInitialized) updateMarkers(reports, filter);
-}
-
-function destroy() {
-  if (animationId) cancelAnimationFrame(animationId);
-  window.removeEventListener('resize', onResize);
-  if (canvasContainer) {
-    canvasContainer.removeEventListener('pointermove', onPointerMove);
-    canvasContainer.removeEventListener('click', onClick);
-    canvasContainer.removeEventListener('pointerleave', onPointerLeave);
-    canvasContainer.removeEventListener('touchstart', onTouchStart);
-    canvasContainer.removeEventListener('touchmove', onTouchMove);
-    canvasContainer.removeEventListener('touchend', onTouchEnd);
+export function destroy() {
+  isPaused = true;
+  cancelAnimationFrame(frameId);
+  clearTimeout(frameId);
+  window.removeEventListener('resize', handleResize);
+  if (renderer?.domElement) {
+    renderer.domElement.removeEventListener('pointermove', handlePointerMove);
+    renderer.domElement.removeEventListener('pointerleave', hideTooltip);
+    renderer.domElement.removeEventListener('click', handleCanvasClick);
   }
-  clearLabels();
-  materialCache.forEach(m => m.dispose());
-  materialCache.clear();
-  geometryCache.forEach(g => g.dispose());
-  geometryCache.clear();
-  if (renderer) {
-    renderer.dispose();
-    renderer.forceContextLoss();
+  cachedGeometries.forEach((g) => g.dispose());
+  cachedMaterials.forEach((m) => m.dispose());
+  cachedTextures.forEach((t) => t.dispose());
+  cachedGeometries.clear();
+  cachedMaterials.clear();
+  cachedTextures.clear();
+  if (hoverTooltip) {
+    hoverTooltip.remove();
+    hoverTooltip = null;
   }
-  if (scene) {
-    scene.traverse(disposeObject);
-  }
+  if (controls) controls.dispose();
+  if (renderer) renderer.dispose();
   isInitialized = false;
 }
 
-function showToast(message) {
-  const toast = document.getElementById('toast');
-  if (!toast) return;
-  toast.textContent = message;
-  toast.classList.add('show');
-  setTimeout(() => toast.classList.remove('show'), 2600);
-}
+window.CityFix3D = {
+  initThreeCity,
+  updateReports,
+  setFilters,
+  setCameraPreset,
+  focusReport,
+  setPaused,
+  destroy,
+  get isInitialized() {
+    return isInitialized;
+  },
+  get filters() {
+    return { ...activeFilters };
+  },
+};
 
-export { initThreeCity, toggleView, updateReports, destroy };
+window.dispatchEvent(new CustomEvent('cityfix:3d-ready'));

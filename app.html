@@ -3,105 +3,774 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="theme-color" content="#0b1020" />
-  <title>CityFix AI — Better cities, together</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  <link rel="stylesheet" href="styles.css" />
-  <link rel="manifest" href="manifest.webmanifest" />
+  <meta name="theme-color" content="#050912" />
+  <meta name="description" content="CITYFIX AI Smart City Command Center — 3D Jaipur Digital Twin, AI civic issue triage, citizen reporting, and admin operations." />
+  <title>CITYFIX AI — Smart City Command Center</title>
   <link rel="icon" href="cityfix-logo.svg" type="image/svg+xml" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Urbanist:wght@500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" />
+  <link rel="stylesheet" href="styles.css" />
+  <script>
+    (function () {
+      var useCdn = location.hostname.endsWith("github.io") || location.protocol === "file:";
+      var base = useCdn ? "https://unpkg.com/three@0.187.0/" : "/vendor/three/";
+      var el = document.createElement("script");
+      el.type = "importmap";
+      el.textContent = JSON.stringify({
+        imports: {
+          "three": base + "build/three.module.js",
+          "three/addons/": base + "examples/jsm/"
+        }
+      });
+      document.currentScript.after(el);
+    })();
+  </script>
 </head>
 <body>
+  <div class="sidebar-overlay" id="sidebar-overlay" aria-hidden="true"></div>
+
   <div class="app-shell">
-    <aside class="sidebar">
-      <a class="brand" href="#" aria-label="CityFix home">
-        <span class="brand-mark">C<span>+</span></span>
-        <span><b>cityfix</b><small>URBAN INTELLIGENCE</small></span>
-      </a>
-      <div class="workspace-label">WORKSPACE</div>
-      <nav class="nav">
-        <button class="nav-item active" data-view="overview"><span>◫</span> Overview</button>
-        <button class="nav-item" data-view="explore"><span>⌖</span> City map</button>
-        <button class="nav-item" data-view="reports"><span>▤</span> Issue reports <i id="nav-count">0</i></button>
-        <button class="nav-item" data-view="impact"><span>✳</span> Community impact</button>
+    <aside class="sidebar" id="sidebar" aria-label="Command Center Navigation">
+      <div class="sidebar-header">
+        <a class="brand" href="index.html" aria-label="CITYFIX AI Landing Page">
+          <svg class="brand-svg" viewBox="0 0 32 32" width="30" height="30" aria-hidden="true">
+            <rect width="32" height="32" rx="8" fill="#0d172a" stroke="rgba(56,189,248,0.45)" stroke-width="1.5"/>
+            <path d="M21.5 10.5a8.5 8.5 0 1 0 0 11" fill="none" stroke="#38bdf8" stroke-width="3" stroke-linecap="round"/>
+            <path d="M19 16h7M22.5 12.5v7" stroke="#fbbf24" stroke-width="2.2" stroke-linecap="round"/>
+          </svg>
+          <span><b>CITYFIX<span class="brand-ai">.AI</span></b><small>COMMAND CENTER</small></span>
+        </a>
+        <button class="sidebar-close" id="sidebar-close" type="button" aria-label="Close navigation">×</button>
+      </div>
+
+      <nav class="nav" aria-label="Workspace views">
+        <button class="nav-item active" data-view="overview" type="button">
+          <span class="nav-icon" aria-hidden="true">◫</span>
+          <span>Overview</span>
+        </button>
+        <button class="nav-item" data-view="twin" type="button">
+          <span class="nav-icon" aria-hidden="true">❖</span>
+          <span>3D Digital Twin</span>
+        </button>
+        <button class="nav-item" data-view="explore" type="button">
+          <span class="nav-icon" aria-hidden="true">⌖</span>
+          <span>City Map</span>
+        </button>
+        <button class="nav-item" data-view="reports" type="button">
+          <span class="nav-icon" aria-hidden="true">▤</span>
+          <span>Issue Reports</span>
+          <i class="nav-count tabular" id="nav-count">0</i>
+        </button>
+        <button class="nav-item" data-view="impact" type="button">
+          <span class="nav-icon" aria-hidden="true">◔</span>
+          <span>Analytics &amp; Impact</span>
+        </button>
+        <button class="nav-item" data-view="admin" type="button">
+          <span class="nav-icon" aria-hidden="true">⚙</span>
+          <span>Admin Console</span>
+        </button>
       </nav>
+
       <div class="sidebar-bottom">
-        <div class="city-card"><div class="pulse"></div><div><b>Jaipur, Rajasthan</b><small>Demo city workspace</small></div></div>
-        <div class="profile"><div class="avatar">MF</div><div><b>CityFix Resident</b><small>Community member</small></div><span>•••</span></div>
+        <div class="workspace-card">
+          <strong id="workspace-city">Jaipur, Rajasthan</strong>
+          <span id="workspace-mode-label">Local demo workspace · Synthetic seed data</span>
+        </div>
+        <div class="profile-card">
+          <div class="avatar" id="user-avatar">CR</div>
+          <div class="profile-meta">
+            <strong id="user-display-name">CityFix Resident</strong>
+            <span id="user-role-label">Local demo session</span>
+          </div>
+        </div>
+        <a class="back-home-link" href="index.html">← Back to landing site</a>
       </div>
     </aside>
 
     <main class="main">
       <header class="topbar">
-        <div><div class="eyebrow">SUNDAY, NOVEMBER 22, 2026 <span class="live-dot"></span> DEMO ENVIRONMENT</div><h1 id="page-title">City overview</h1></div>
-        <div class="top-actions"><button class="icon-btn" id="cloud-auth" type="button">☁ <span>Cloud sign in</span></button><button class="icon-btn" id="admin-toggle" title="Toggle admin mode">⚙ <span>Admin mode: off</span></button><button class="primary-btn" id="open-report">＋ Report an issue</button></div>
+        <div class="topbar-left">
+          <button class="mobile-menu-btn" id="mobile-menu-btn" type="button" aria-label="Open navigation menu" aria-expanded="false">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+              <line x1="3" y1="7" x2="21" y2="7"/>
+              <line x1="3" y1="12" x2="21" y2="12"/>
+              <line x1="3" y1="17" x2="21" y2="17"/>
+            </svg>
+          </button>
+          <div>
+            <div class="eyebrow" id="env-status-line">JAIPUR WORKSPACE · LOCAL DEMO DATA</div>
+            <h1 id="page-title">City overview</h1>
+          </div>
+        </div>
+        <div class="top-actions">
+          <button class="secondary-btn" id="cloud-auth" type="button">Cloud sign in</button>
+          <button class="primary-btn" id="open-report" type="button">+ Report an issue</button>
+        </div>
       </header>
 
-      <section class="view active" id="view-overview">
-        <div class="welcome-row"><div><div class="eyebrow purple">CITY PULSE · LIVE DEMO</div><h2>Small reports. <em>Smarter cities.</em></h2><p class="muted">See what needs attention and help make your neighbourhood better.</p></div><div class="weather-chip"><span>☀</span><div><b>Jaipur</b><small>City workspace</small></div></div></div>
-        <section class="city-digital-twin" aria-label="Animated illustrative 3D city model">
-          <div class="twin-copy"><span class="twin-kicker">CITYFIX DIGITAL TWIN · ILLUSTRATIVE</span><h3>Jaipur, in a new dimension.</h3><p>An animated concept view of a connected city. Map pins and demo issue data remain in the interactive map below.</p><span class="twin-live"><i></i> 3D CITY SIMULATION</span></div>
-          <div class="twin-stage" aria-hidden="true">
-            <div class="twin-orbit orbit-one"></div><div class="twin-orbit orbit-two"></div>
-            <div class="twin-ground"><div class="twin-road road-a"></div><div class="twin-road road-b"></div><div class="twin-road road-c"></div>
-              <div class="twin-building b-one"><i></i><i></i><i></i></div><div class="twin-building b-two"><i></i><i></i><i></i><i></i></div><div class="twin-building b-three"><i></i><i></i></div><div class="twin-building b-four"><i></i><i></i><i></i></div><div class="twin-building b-five"><i></i><i></i><i></i><i></i></div><div class="twin-building b-six"><i></i><i></i></div><div class="twin-park"></div>
-              <span class="twin-marker marker-a"></span><span class="twin-marker marker-b"></span><span class="twin-marker marker-c"></span>
+      <div class="mode-banner" id="mode-banner" role="status">
+        <span id="mode-banner-text">Demo mode active: showing synthetic Jaipur seed reports saved locally in your browser.</span>
+        <span class="mode-banner-sep" aria-hidden="true">·</span>
+        <span id="ai-capability-text">Checking server AI status…</span>
+      </div>
+
+      <!-- VIEW 1: OVERVIEW -->
+      <section class="view active" id="view-overview" aria-labelledby="page-title">
+        <div class="stats-grid">
+          <article class="stat-card">
+            <div class="stat-label">Open issues</div>
+            <strong class="tabular" id="stat-open">0</strong>
+            <small>Awaiting triage or resolution</small>
+          </article>
+          <article class="stat-card">
+            <div class="stat-label">Resolved</div>
+            <strong class="tabular" id="stat-resolved">0</strong>
+            <small>Completed in current dataset</small>
+          </article>
+          <article class="stat-card">
+            <div class="stat-label">High &amp; critical</div>
+            <strong class="tabular" id="stat-priority">0</strong>
+            <small>Safety or corridor impact</small>
+          </article>
+          <article class="stat-card">
+            <div class="stat-label">Resolution rate</div>
+            <strong class="tabular" id="stat-resolution-rate">0%</strong>
+            <small>Computed from recorded issues</small>
+          </article>
+        </div>
+
+        <div class="overview-split">
+          <section class="panel">
+            <div class="panel-head">
+              <div>
+                <h2>Spatial city snapshot</h2>
+                <p>Interactive Jaipur issue distribution (demo coordinates)</p>
+              </div>
+              <div class="panel-actions">
+                <button class="text-btn" data-goto="twin" type="button">Open 3D Twin →</button>
+                <button class="text-btn" data-goto="explore" type="button">Full Map →</button>
+              </div>
+            </div>
+            <div id="mini-map" class="map"></div>
+            <div class="map-legend">
+              <span><i class="legend-swatch critical"></i> High / Critical</span>
+              <span><i class="legend-swatch normal"></i> Normal / In progress</span>
+              <span><i class="legend-swatch resolved"></i> Resolved</span>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-head">
+              <div>
+                <h2>Priority queue</h2>
+                <p>Click any report to inspect full details</p>
+              </div>
+            </div>
+            <div id="priority-list" class="stack-list"></div>
+          </section>
+        </div>
+
+        <div class="overview-bottom">
+          <section class="panel">
+            <div class="panel-head">
+              <div>
+                <h2>Category breakdown</h2>
+                <p>Share of recorded issues by infrastructure type</p>
+              </div>
+            </div>
+            <div id="overview-category-bars" class="bar-chart-list"></div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-head">
+              <div>
+                <h2>Recent activity</h2>
+                <p>Latest citizen and demo submissions</p>
+              </div>
+              <button class="text-btn" data-goto="reports" type="button">View all reports →</button>
+            </div>
+            <div id="recent-list" class="stack-list"></div>
+          </section>
+        </div>
+      </section>
+
+      <!-- VIEW 2: REAL 3D DIGITAL TWIN -->
+      <section class="view" id="view-twin" aria-label="3D Smart City Digital Twin">
+        <div class="twin-header-bar">
+          <div>
+            <h2>Jaipur 3D Digital Twin</h2>
+            <p class="muted">Interactive Procedural 3D City Model (Three.js WebGL · No external GLB asset supplied). Drag to orbit, scroll to zoom, right-drag to pan, click buildings or markers to inspect.</p>
+          </div>
+          <span class="mono-meta" id="twin-status">Initializing 3D viewport…</span>
+        </div>
+
+        <div class="twin-viewport-wrap">
+          <div id="city-3d" class="city-3d-canvas" aria-label="Interactive 3D Jaipur city canvas"></div>
+          <div id="twin-fallback" class="twin-fallback" hidden>
+            <strong>3D WebGL viewport unavailable</strong>
+            <p>Your device or browser suspended WebGL. Use the interactive 2D City Map for full geospatial inspection.</p>
+            <button class="primary-btn" data-goto="explore" type="button">Open 2D City Map</button>
+          </div>
+
+          <!-- Slide-in Inspector Drawer inside 3D stage -->
+          <aside class="twin-inspector" id="twin-inspector" hidden aria-label="3D Selection Inspector">
+            <div class="twin-inspector-head">
+              <span class="mono-meta" id="twin-inspector-kicker">INSPECTOR</span>
+              <button class="close-btn small" id="twin-inspector-close" type="button" aria-label="Close inspector">×</button>
+            </div>
+            <h3 id="twin-inspector-title">Selection</h3>
+            <p class="twin-inspector-sub" id="twin-inspector-sub"></p>
+            <div class="twin-inspector-body" id="twin-inspector-body"></div>
+            <div class="twin-inspector-actions" id="twin-inspector-actions"></div>
+          </aside>
+
+          <!-- Collapsible Bottom Control Dock (Zero Viewport Occlusion) -->
+          <div class="twin-dock-wrap" id="twin-dock-wrap">
+            <button class="twin-dock-toggle" id="twin-dock-toggle" type="button" aria-expanded="true">▾ Hide 3D Controls</button>
+            <div class="twin-dock" id="twin-dock">
+              <div class="dock-group" role="group" aria-label="Camera presets">
+                <button class="dock-btn active" data-camera="overview" type="button">Overview</button>
+                <button class="dock-btn" data-camera="heritage" type="button">Heritage Core</button>
+                <button class="dock-btn" data-camera="civic" type="button">Civic Core</button>
+                <button class="dock-btn" data-camera="topdown" type="button">Top-Down</button>
+              </div>
+              <div class="dock-group">
+                <select id="twin-category-filter" aria-label="Filter 3D markers by category">
+                  <option value="all">All categories</option>
+                  <option value="Road damage">Road damage</option>
+                  <option value="Garbage">Garbage</option>
+                  <option value="Waterlogging">Waterlogging</option>
+                  <option value="Streetlight">Streetlight</option>
+                  <option value="Other">Other</option>
+                </select>
+                <select id="twin-severity-filter" aria-label="Filter 3D markers by severity">
+                  <option value="all">All severities</option>
+                  <option value="Critical">Critical</option>
+                  <option value="High">High</option>
+                  <option value="Normal">Normal</option>
+                </select>
+                <input id="twin-search" type="search" placeholder="Search ward or ID…" aria-label="Search 3D markers by location or ID" />
+              </div>
+              <div class="dock-group">
+                <button class="dock-btn active" id="twin-cluster-toggle" type="button" aria-pressed="true">Clustering: On</button>
+              </div>
             </div>
           </div>
-        </section>
-        <div class="stats-grid">
-          <article class="stat-card"><div class="stat-top"><span>Open issues</span><span class="stat-icon violet">▤</span></div><strong id="stat-open">0</strong><small><span class="up">●</span> Need community attention</small></article>
-          <article class="stat-card"><div class="stat-top"><span>Resolved</span><span class="stat-icon green">✓</span></div><strong id="stat-resolved">0</strong><small>Marked resolved in this demo</small></article>
-          <article class="stat-card"><div class="stat-top"><span>High priority</span><span class="stat-icon orange">↗</span></div><strong id="stat-priority">0</strong><small>Safety and access first</small></article>
-          <article class="stat-card"><div class="stat-top"><span>Community points</span><span class="stat-icon blue">✳</span></div><strong id="stat-points">120</strong><small>Your participation score</small></article>
         </div>
-        <div class="content-grid">
-          <section class="panel map-panel"><div class="panel-head"><div><h3>City issue map</h3><p>Explore reported issues across the demo city</p></div><button class="text-btn" data-goto="explore">Explore map ↗</button></div><div id="mini-map" class="map"></div><div class="map-legend"><span><i class="dot red"></i> High priority</span><span><i class="dot yellow"></i> In progress</span><span><i class="dot green"></i> Resolved</span></div></section>
-          <section class="panel"><div class="panel-head"><div><h3>Needs attention</h3><p>Priority-ranked community reports</p></div><span class="soft-tag">AI triage · demo</span></div><div id="priority-list" class="priority-list"></div></section>
+      </section>
+
+      <!-- VIEW 3: INTERACTIVE CITY MAP & ZERO-KEY 3D STREET EXPLORER -->
+      <section class="view" id="view-explore" aria-label="Interactive City Map">
+        <div class="section-intro">
+          <div>
+            <h2>Geospatial issue explorer &amp; 3D Street Explorer</h2>
+            <p class="muted">Inspect OpenStreetMap issue layers alongside free 3D OSM Jaipur street buildings, open Panoramax street photos, and our 3D Twin corridor—zero API key required.</p>
+          </div>
+          <div class="map-controls-bar">
+            <div class="segmented" role="group" aria-label="Map display mode">
+              <button class="seg-btn active" data-mapmode="2d" type="button">2D Map</button>
+              <button class="seg-btn" data-mapmode="split" type="button">Split</button>
+              <button class="seg-btn" data-mapmode="streetview" type="button">3D Street View</button>
+            </div>
+            <div class="segmented" role="group" aria-label="Map status filter">
+              <button class="seg-btn active" data-mapfilter="all" type="button">All</button>
+              <button class="seg-btn" data-mapfilter="open" type="button">Open</button>
+              <button class="seg-btn" data-mapfilter="resolved" type="button">Resolved</button>
+            </div>
+            <input id="map-search" type="search" placeholder="Search location or title…" aria-label="Search map issues" />
+          </div>
         </div>
-        <section class="panel bottom-panel"><div class="panel-head"><div><h3>Recent community activity</h3><p>Latest reports submitted to CityFix</p></div><button class="text-btn" data-goto="reports">View all →</button></div><div id="recent-list" class="recent-list"></div></section>
+
+        <div class="map-sync-grid" id="map-sync-grid">
+          <div class="panel map-frame-panel">
+            <div class="map-stage-grid" id="map-stage-grid">
+              <div class="map-2d-pane" id="map-2d-pane">
+                <div id="full-map" class="map large-map"></div>
+                <div class="map-foot">
+                  <span>OpenStreetMap tiles</span>
+                  <span class="tabular" id="map-total">0 reports displayed</span>
+                </div>
+              </div>
+
+              <div class="streetview-stage" id="streetview-stage" hidden>
+                <div class="streetview-toolbar">
+                  <div class="streetview-meta-copy">
+                    <span class="mono-meta" id="streetview-kicker">3D OSM STREET EXPLORER</span>
+                    <strong id="streetview-location-title">MI Road, Jaipur</strong>
+                    <small class="tabular" id="streetview-pov-readout">Heading 0° · Tilt 74°</small>
+                  </div>
+                  <div class="streetview-actions">
+                    <button class="row-action" id="streetview-engine-toggle" type="button" aria-pressed="false" title="Switch between real 3D OpenStreetMap Jaipur buildings and interactive Three.js 3D Twin street">3D Twin Corridor</button>
+                    <button class="row-action" id="streetview-photo-toggle" type="button" aria-pressed="true" hidden>Street Photo</button>
+                    <button class="row-action" id="streetview-recenter" type="button">Face target</button>
+                    <button class="row-action" id="streetview-to-twin" type="button">Open City Twin</button>
+                  </div>
+                </div>
+
+                <div class="streetview-presets" aria-label="Jaipur Street View quick locations">
+                  <button class="quick-loc-btn" type="button" data-sv-preset="MI Road, Jaipur" data-lat="26.9163" data-lon="75.8087">MI Road</button>
+                  <button class="quick-loc-btn" type="button" data-sv-preset="Hawa Mahal Road, Jaipur" data-lat="26.9239" data-lon="75.8267">Hawa Mahal</button>
+                  <button class="quick-loc-btn" type="button" data-sv-preset="Jhotwara, Jaipur" data-lat="26.941" data-lon="75.746">Jhotwara</button>
+                  <button class="quick-loc-btn" type="button" data-sv-preset="Vaishali Nagar, Jaipur" data-lat="26.912" data-lon="75.739">Vaishali Nagar</button>
+                  <button class="quick-loc-btn" type="button" data-sv-preset="Mansarovar, Jaipur" data-lat="26.854" data-lon="75.764">Mansarovar</button>
+                </div>
+
+                <div class="streetview-canvas-wrap">
+                  <div id="streetview-pano" class="streetview-pano" aria-label="Interactive 3D OpenStreetMap Jaipur street and building view"></div>
+                  <div id="streetview-twin-pano" class="streetview-pano" hidden aria-label="Interactive Three.js 3D Twin Street-Level View"></div>
+
+                  <div id="streetview-step-controls" class="streetview-step-controls" aria-label="Street walk navigation controls">
+                    <span class="streetview-mode-badge" id="streetview-engine-badge">OPENFREEMAP 3D · NO API KEY</span>
+                    <div class="streetview-step-btns">
+                      <button class="row-action" id="streetview-step-left" type="button" title="Turn left 35°">↺ Left</button>
+                      <button class="row-action" id="streetview-step-fwd" type="button" title="Move forward along road">Walk ↑</button>
+                      <button class="row-action" id="streetview-step-back" type="button" title="Move back along road">Back ↓</button>
+                      <button class="row-action" id="streetview-step-right" type="button" title="Turn right 35°">Right ↻</button>
+                    </div>
+                  </div>
+
+                  <div id="streetview-photo-card" class="streetview-locator-wrap streetview-photo-card" hidden>
+                    <div class="streetview-locator-head">
+                      <span id="streetview-photo-label">Panoramax Open Photo</span>
+                      <div class="streetview-photo-nav">
+                        <button type="button" id="streetview-photo-prev" aria-label="Previous street photo">‹</button>
+                        <button type="button" id="streetview-photo-next" aria-label="Next street photo">›</button>
+                        <button type="button" id="streetview-photo-expand" aria-label="Expand street photo">⤢</button>
+                      </div>
+                    </div>
+                    <button type="button" id="streetview-photo-thumb-btn" class="streetview-photo-thumb-btn" aria-label="Open full street photo">
+                      <img id="streetview-photo-img" alt="OpenStreetMap Panoramax street photo" />
+                    </button>
+                  </div>
+
+                  <div id="streetview-photo-lightbox" class="streetview-photo-lightbox" hidden>
+                    <div class="streetview-lightbox-bar">
+                      <span id="streetview-lightbox-caption">Panoramax Open Street Imagery · CC-BY / Open Data</span>
+                      <button class="row-action" id="streetview-lightbox-close" type="button">Close ×</button>
+                    </div>
+                    <img id="streetview-lightbox-img" alt="Expanded open street photo" />
+                  </div>
+
+                  <div id="streetview-overlay" class="streetview-overlay" hidden>
+                    <strong id="streetview-overlay-title">Loading 3D Street Explorer…</strong>
+                    <p id="streetview-overlay-msg">Preparing real 3D OpenStreetMap Jaipur buildings and issue markers.</p>
+                    <div class="streetview-overlay-actions">
+                      <button class="primary-btn" id="streetview-fallback-twin" type="button">Open 3D Twin Corridor</button>
+                      <button class="secondary-btn" id="streetview-fallback-2d" type="button">Back to 2D Map</button>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="map-foot">
+                  <span id="streetview-coverage-note">OpenFreeMap 3D OSM Buildings (No API key) · Drag to rotate 360°, right-drag to tilt</span>
+                  <span class="tabular" id="streetview-coords-label">26.9163, 75.8087</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="map-side-stack">
+            <section class="panel map-layers-panel" aria-label="Map layer controls">
+              <div class="panel-head">
+                <div>
+                  <h3>Issue layers</h3>
+                  <p class="tabular" id="map-layers-summary">All 5 layers active</p>
+                </div>
+                <button class="text-btn" id="map-layers-reset" type="button">Show all</button>
+              </div>
+              <div class="segmented layer-quick-bar" role="group" aria-label="Quick category layer switch">
+                <button class="seg-btn active" data-layer-solo="all" type="button">All</button>
+                <button class="seg-btn" data-layer-solo="Road damage" type="button">Road damage</button>
+                <button class="seg-btn" data-layer-solo="Garbage" type="button">Waste</button>
+                <button class="seg-btn" data-layer-solo="Streetlight" type="button">Streetlight</button>
+              </div>
+              <div id="map-layer-list" class="layer-toggle-list" role="group" aria-label="Toggle individual issue category layers"></div>
+            </section>
+            <aside class="panel map-list-panel">
+              <div class="panel-head">
+                <div>
+                  <h3>Synchronized queue</h3>
+                  <p>Click an item to pan map &amp; inspect</p>
+                </div>
+              </div>
+              <div id="map-sync-list" class="stack-list"></div>
+            </aside>
+          </div>
+        </div>
       </section>
 
-      <section class="view" id="view-explore">
-        <div class="section-intro"><div><div class="eyebrow purple">GEOSPATIAL INTELLIGENCE</div><h2>Explore your city</h2><p class="muted">Find reported problems, understand clusters and spot priority areas.</p></div><div class="filter-pills"><button class="filter active" data-mapfilter="all">All issues</button><button class="filter" data-mapfilter="open">Open</button><button class="filter" data-mapfilter="resolved">Resolved</button></div></div>
-        <div class="panel full-map-panel"><div id="full-map" class="map large-map"></div><div class="map-foot"><span>⌖ Map uses OpenStreetMap tiles</span><span id="map-total">0 reports displayed</span></div></div>
+      <!-- VIEW 4: ISSUE REPORTS & TRACKING -->
+      <section class="view" id="view-reports" aria-label="Issue Reports and Tracking">
+        <div class="section-intro">
+          <div>
+            <h2>Issue reports &amp; citizen tracking</h2>
+            <p class="muted">Track any report by reference code, filter by status or severity, and open full details.</p>
+          </div>
+          <div class="tracker-box">
+            <input id="track-ref-input" type="search" placeholder="Enter reference ID (e.g. CF-1024)" aria-label="Track report by reference ID" />
+            <button class="secondary-btn" id="track-ref-btn" type="button">Track ID</button>
+            <button class="primary-btn" id="open-report-2" type="button">+ New report</button>
+          </div>
+        </div>
+
+        <div class="toolbar">
+          <input id="search-reports" type="search" placeholder="Search by title, location, description or ID…" aria-label="Search issue reports" />
+          <select id="status-filter" aria-label="Filter by status">
+            <option value="all">All statuses</option>
+            <option value="Open">Open</option>
+            <option value="In progress">In progress</option>
+            <option value="Resolved">Resolved</option>
+          </select>
+          <select id="category-filter" aria-label="Filter by category">
+            <option value="all">All categories</option>
+            <option value="Road damage">Road damage</option>
+            <option value="Garbage">Garbage</option>
+            <option value="Waterlogging">Waterlogging</option>
+            <option value="Streetlight">Streetlight</option>
+            <option value="Other">Other</option>
+          </select>
+          <select id="severity-filter" aria-label="Filter by severity">
+            <option value="all">All severities</option>
+            <option value="Critical">Critical</option>
+            <option value="High">High</option>
+            <option value="Normal">Normal</option>
+          </select>
+        </div>
+
+        <div class="panel table-panel">
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Report</th>
+                  <th>Location</th>
+                  <th>Category</th>
+                  <th>Severity</th>
+                  <th>Status</th>
+                  <th>Date</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="reports-body"></tbody>
+            </table>
+          </div>
+          <div id="empty-state" class="empty-state" hidden>
+            <p>No reports match your current filters.</p>
+            <button class="secondary-btn" id="reset-filters-btn" type="button">Reset filters</button>
+          </div>
+        </div>
       </section>
 
-      <section class="view" id="view-reports">
-        <div class="section-intro"><div><div class="eyebrow purple">CITIZEN REPORTING</div><h2>Issue intelligence</h2><p class="muted">A transparent view of reports and their current status.</p></div><button class="primary-btn" id="open-report-2">＋ New report</button></div>
-        <div class="toolbar"><input id="search-reports" type="search" placeholder="Search by issue, location or ID…" /><select id="status-filter"><option value="all">All statuses</option><option value="Open">Open</option><option value="In progress">In progress</option><option value="Resolved">Resolved</option></select><select id="category-filter"><option value="all">All categories</option><option>Road damage</option><option>Garbage</option><option>Waterlogging</option><option>Streetlight</option><option>Other</option></select></div>
-        <div class="panel table-panel"><div class="table-wrap"><table><thead><tr><th>REPORT</th><th>LOCATION</th><th>CATEGORY</th><th>PRIORITY</th><th>STATUS</th><th>UPDATED</th><th></th></tr></thead><tbody id="reports-body"></tbody></table></div><div id="empty-state" class="empty-state" hidden>No reports match your filters.</div></div>
+      <!-- VIEW 5: ANALYTICS & COMMUNITY IMPACT -->
+      <section class="view" id="view-impact" aria-label="Analytics and Community Impact">
+        <div class="section-intro">
+          <div>
+            <h2>Analytics &amp; community visibility</h2>
+            <p class="muted">Metrics below are computed strictly from available records—never fabricated municipal telemetry.</p>
+          </div>
+        </div>
+
+        <div class="analytics-grid">
+          <section class="panel">
+            <div class="panel-head">
+              <div>
+                <h3>Status distribution</h3>
+                <p>Open vs. in-progress vs. resolved</p>
+              </div>
+            </div>
+            <div id="analytics-status-chart" class="bar-chart-list"></div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-head">
+              <div>
+                <h3>Geographic distribution</h3>
+                <p>Recorded reports grouped by locality</p>
+              </div>
+            </div>
+            <div id="geo-distribution" class="bar-chart-list"></div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-head">
+              <div>
+                <h3>Category distribution</h3>
+                <p>Infrastructure problem mix</p>
+              </div>
+            </div>
+            <div id="analytics-category-chart" class="bar-chart-list"></div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-head">
+              <div>
+                <h3>Submission timeline</h3>
+                <p>Volume by recorded date window</p>
+              </div>
+            </div>
+            <div id="analytics-trend-chart" class="bar-chart-list"></div>
+          </section>
+        </div>
+
+        <div class="impact-grid">
+          <div class="panel impact-hero">
+            <span class="eyebrow">DEMO PARTICIPATION SCORE</span>
+            <div class="big-score tabular" id="impact-points">120<span> pts</span></div>
+            <p>Prototype participation points (+30 per local demo report submitted) to illustrate civic engagement mechanics.</p>
+            <div class="progress"><span id="impact-progress-bar"></span></div>
+            <small id="impact-progress-note">Local browser demo metric · Not an official municipal ranking</small>
+          </div>
+          <div class="panel">
+            <div class="panel-head">
+              <div>
+                <h3>Citizen milestones</h3>
+                <p>Unlocked as you submit reports</p>
+              </div>
+            </div>
+            <div class="milestone-list">
+              <div class="milestone">
+                <div>
+                  <strong>First responder</strong>
+                  <small>Explore the command center &amp; inspect an issue</small>
+                </div>
+                <span class="mono-meta" id="milestone-one">Unlocked</span>
+              </div>
+              <div class="milestone">
+                <div>
+                  <strong>Neighbourhood voice</strong>
+                  <small>Submit 3 community reports</small>
+                </div>
+                <span class="mono-meta" id="milestone-three">In progress</span>
+              </div>
+              <div class="milestone">
+                <div>
+                  <strong>Civic champion</strong>
+                  <small>Submit 5 community reports</small>
+                </div>
+                <span class="mono-meta" id="milestone-five">In progress</span>
+              </div>
+            </div>
+          </div>
+        </div>
       </section>
 
-      <section class="view" id="view-impact">
-        <div class="section-intro"><div><div class="eyebrow purple">COMMUNITY POWER</div><h2>Impact, made visible</h2><p class="muted">Recognition for people who help make neighbourhoods better.</p></div></div>
-        <div class="impact-grid"><div class="panel impact-hero"><div class="eyebrow">YOUR COMMUNITY SCORE</div><div class="big-score" id="impact-points">120<span> pts</span></div><p>Every useful report helps the city understand what needs attention.</p><div class="progress"><span></span></div><small>Demo points · 30 points per submitted report</small></div><div class="panel"><h3>Community milestones</h3><div class="milestone"><span class="milestone-icon">◎</span><div><b>First responder</b><small>Submit your first issue report</small></div><span class="soft-tag">Unlocked</span></div><div class="milestone"><span class="milestone-icon">✦</span><div><b>Neighbourhood voice</b><small>Submit 3 issue reports</small></div><span class="soft-tag" id="milestone-three">In progress</span></div><div class="milestone"><span class="milestone-icon">♧</span><div><b>Community champion</b><small>Submit 5 issue reports</small></div><span class="soft-tag" id="milestone-five">In progress</span></div></div></div>
-        <div class="panel"><div class="panel-head"><div><h3>Ward activity leaderboard</h3><p>Illustrative demo ranking, not official municipal data</p></div><span class="soft-tag">Sample data</span></div><div class="leader-row"><span class="rank">01</span><div class="leader-avatar">J</div><div class="leader-name"><b>Vaishali Nagar</b><small>Community activity</small></div><b>84 <small>reports</small></b></div><div class="leader-row"><span class="rank">02</span><div class="leader-avatar">M</div><div class="leader-name"><b>Malviya Nagar</b><small>Community activity</small></div><b>67 <small>reports</small></b></div><div class="leader-row"><span class="rank">03</span><div class="leader-avatar">M</div><div class="leader-name"><b>Mansarovar</b><small>Community activity</small></div><b>52 <small>reports</small></b></div></div>
+      <!-- VIEW 6: ADMIN COMMAND CENTER -->
+      <section class="view" id="view-admin" aria-label="Admin Command Center">
+        <div class="section-intro">
+          <div>
+            <h2>Admin operations console</h2>
+            <p class="muted">Authorised issue triage, status transitions, permission checks, audit logs, and data exports.</p>
+          </div>
+          <div class="admin-header-actions">
+            <button class="secondary-btn" id="admin-toggle" type="button">Demo admin mode: off</button>
+            <button class="secondary-btn" id="export-csv" type="button">Export CSV</button>
+            <button class="secondary-btn" id="export-json" type="button">Export JSON</button>
+          </div>
+        </div>
+
+        <div class="admin-gate-banner" id="admin-gate-banner"></div>
+
+        <div class="admin-grid">
+          <section class="panel">
+            <div class="panel-head">
+              <div>
+                <h3>Priority triage queue</h3>
+                <p>Update status with audit trail</p>
+              </div>
+            </div>
+            <div class="admin-note-bar">
+              <input id="admin-audit-note" type="text" maxlength="200" placeholder="Optional audit note for next status transition (e.g. Crew scheduled)…" aria-label="Optional audit note" />
+            </div>
+            <div id="admin-priority-queue" class="stack-list"></div>
+          </section>
+
+          <div class="admin-side-stack">
+            <section class="panel">
+              <div class="panel-head">
+                <div>
+                  <h3>Role &amp; RLS permissions</h3>
+                  <p>Verified backend authorisation state</p>
+                </div>
+              </div>
+              <div id="admin-profile-card" class="permission-box"></div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-head">
+                <div>
+                  <h3>Audit event log</h3>
+                  <p>Status transitions &amp; reviewer history</p>
+                </div>
+              </div>
+              <div id="admin-audit-list" class="stack-list"></div>
+            </section>
+          </div>
+        </div>
       </section>
-      <footer>CityFix AI <span>·</span> Buildathon prototype <span>·</span> Demo data is clearly labelled and not an official government service.</footer>
+
+      <footer class="app-footer">
+        <span>CityFix AI · Buildathon Smart City Prototype</span>
+        <span aria-hidden="true">·</span>
+        <span>Demo records are synthetic and not affiliated with any government authority.</span>
+      </footer>
     </main>
   </div>
 
-  <div class="modal-backdrop" id="report-modal" aria-hidden="true">
-    <div class="modal"><div class="modal-head"><div><div class="eyebrow purple">CITIZEN REPORT</div><h2>Help fix your city.</h2><p class="muted">Share what you noticed. We'll organise the information.</p></div><button class="close-btn" id="close-modal">×</button></div>
-      <form id="report-form">
-        <label>What is the issue? <input id="issue-title" required maxlength="70" placeholder="e.g. Large pothole near the market" /></label>
-        <div class="form-row"><label>Category<select id="issue-category"><option>Road damage</option><option>Garbage</option><option>Waterlogging</option><option>Streetlight</option><option>Other</option></select></label><label>Location<input id="issue-location" required placeholder="e.g. Jhotwara, Jaipur" /><button class="row-action" type="button" id="use-location">⌖ Add my location (optional)</button><small>Your device location is requested only if you press this button.</small><input id="issue-lat" type="hidden" /><input id="issue-lon" type="hidden" /></label></div>
-        <label>Describe the problem<textarea id="issue-description" rows="3" placeholder="What happened? Is it blocking access or creating a safety risk?"></textarea></label>
-        <div class="form-row"><label>Safety impact<select id="issue-safety"><option value="Normal">Normal</option><option value="High">High — safety risk</option><option value="Critical">Critical — immediate danger</option></select></label><label>Photo (optional)<input id="issue-photo" type="file" accept="image/jpeg,image/png,image/webp" /><button class="row-action" type="button" id="ai-classify-photo">✦ Analyse photo with AI</button><small>AI analysis is available after Supabase and the server-side AI function are configured.</small></label></div>
-        <div id="photo-preview" class="photo-preview"></div>
-        <div class="ai-result" id="ai-result"><span>✦</span><div><b>Smart triage preview</b><small>Priority suggestion will appear as you describe the issue. This prototype uses transparent demo rules, not a trained AI model.</small></div></div>
-        <button class="primary-btn submit-btn" type="submit">Submit community report <span>→</span></button>
+  <!-- CITIZEN REPORT MODAL -->
+  <div class="modal-backdrop" id="report-modal" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="report-modal-title">
+    <div class="modal">
+      <div class="modal-head">
+        <div>
+          <span class="eyebrow">CITIZEN REPORTING WORKFLOW</span>
+          <h2 id="report-modal-title">Report a civic issue</h2>
+          <p class="muted">Upload an optional photo, describe the problem, and review AI suggestions before submitting.</p>
+        </div>
+        <button class="close-btn" id="close-modal" type="button" aria-label="Close report modal">×</button>
+      </div>
+
+      <form id="report-form" novalidate>
+        <div class="form-group">
+          <label for="issue-photo">Photo evidence (optional · JPEG, PNG, WebP · max 5 MB)</label>
+          <div class="photo-upload-row">
+            <input id="issue-photo" type="file" accept="image/jpeg,image/png,image/webp" />
+            <button class="secondary-btn" type="button" id="ai-classify-photo">Analyse photo with AI</button>
+          </div>
+          <div id="photo-preview" class="photo-preview"></div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="issue-title">Issue title <span class="req">*</span></label>
+            <input id="issue-title" required maxlength="100" placeholder="e.g. Deep pothole near bus stop" />
+          </div>
+          <div class="form-group">
+            <label for="issue-category">Category</label>
+            <select id="issue-category">
+              <option value="Road damage">Road damage</option>
+              <option value="Garbage">Garbage</option>
+              <option value="Waterlogging">Waterlogging</option>
+              <option value="Streetlight">Streetlight</option>
+              <option value="Other">Other</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="issue-location">Location / ward in Jaipur <span class="req">*</span></label>
+          <div class="location-input-row">
+            <input id="issue-location" required maxlength="140" placeholder="e.g. Jhotwara, Jaipur" />
+            <button class="secondary-btn" type="button" id="use-location">Use GPS (optional)</button>
+          </div>
+          <div class="quick-locations" aria-label="Quick Jaipur districts">
+            <button type="button" class="quick-loc-btn" data-loc="Jhotwara, Jaipur" data-lat="26.941" data-lon="75.746">Jhotwara</button>
+            <button type="button" class="quick-loc-btn" data-loc="Vaishali Nagar, Jaipur" data-lat="26.912" data-lon="75.739">Vaishali Nagar</button>
+            <button type="button" class="quick-loc-btn" data-loc="MI Road, Jaipur" data-lat="26.915" data-lon="75.802">MI Road</button>
+            <button type="button" class="quick-loc-btn" data-loc="Mansarovar, Jaipur" data-lat="26.854" data-lon="75.764">Mansarovar</button>
+            <button type="button" class="quick-loc-btn" data-loc="Malviya Nagar, Jaipur" data-lat="26.854" data-lon="75.805">Malviya Nagar</button>
+          </div>
+          <small class="field-hint" id="location-coords-hint">Device location is requested only if you click Use GPS.</small>
+          <input id="issue-lat" type="hidden" />
+          <input id="issue-lon" type="hidden" />
+        </div>
+
+        <div class="form-group">
+          <label for="issue-description">Describe the problem</label>
+          <textarea id="issue-description" rows="3" maxlength="1000" placeholder="What is happening? Is it blocking traffic, pedestrians, or creating a safety risk?"></textarea>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="issue-safety">Safety impact</label>
+            <select id="issue-safety">
+              <option value="Normal">Normal — routine civic maintenance</option>
+              <option value="High">High — disruption or safety hazard</option>
+              <option value="Critical">Critical — immediate physical danger</option>
+            </select>
+          </div>
+          <div class="form-group align-end">
+            <button class="secondary-btn full-width" type="button" id="ai-classify-text">Run AI text &amp; duplicate check</button>
+          </div>
+        </div>
+
+        <div class="duplicate-alert" id="duplicate-alert" hidden></div>
+
+        <div class="ai-result" id="ai-result">
+          <div class="ai-result-head">
+            <strong>Triage preview</strong>
+            <span class="mono-meta" id="ai-provider-label">Awaiting input</span>
+          </div>
+          <p id="ai-result-summary">Describe the issue or upload a photo to receive a structured triage suggestion. All AI outputs require human review.</p>
+          <div class="ai-evidence-list" id="ai-evidence-list"></div>
+        </div>
+
+        <div class="upload-progress" id="upload-progress" hidden>
+          <div class="upload-progress-bar"><span id="upload-progress-fill"></span></div>
+          <small id="upload-progress-text">Submitting report…</small>
+        </div>
+
+        <button class="primary-btn submit-btn" id="submit-report-btn" type="submit">Submit issue report</button>
+      </form>
+
+      <div class="report-confirmation" id="report-confirmation" hidden>
+        <span class="eyebrow">SUBMISSION RECORDED</span>
+        <h3>Report saved with reference <code id="confirmed-ref-id">CF-0000</code></h3>
+        <p id="confirmed-message">Your report has been recorded and placed into the spatial queue.</p>
+        <div class="confirm-actions">
+          <button class="primary-btn" id="confirmed-track-btn" type="button">Inspect &amp; track report</button>
+          <button class="secondary-btn" id="confirmed-new-btn" type="button">Submit another</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ISSUE DETAIL DRAWER -->
+  <div class="drawer-backdrop" id="issue-drawer-backdrop" aria-hidden="true">
+    <aside class="detail-drawer" id="issue-drawer" role="dialog" aria-modal="true" aria-labelledby="drawer-title">
+      <div class="drawer-head">
+        <div>
+          <span class="mono-meta" id="drawer-id">CF-0000</span>
+          <h2 id="drawer-title">Issue Details</h2>
+        </div>
+        <button class="close-btn" id="close-drawer" type="button" aria-label="Close issue detail drawer">×</button>
+      </div>
+      <div class="drawer-body" id="drawer-body"></div>
+    </aside>
+  </div>
+
+  <!-- CLOUD SIGN-IN MODAL (replaces window.prompt) -->
+  <div class="modal-backdrop" id="auth-modal" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="auth-modal-title">
+    <div class="modal modal-compact">
+      <div class="modal-head">
+        <div>
+          <span class="eyebrow">SUPABASE AUTHENTICATION</span>
+          <h2 id="auth-modal-title">Cloud sign in</h2>
+          <p class="muted">Enter your email to receive a passwordless sign-in link for shared reporting and admin checks.</p>
+        </div>
+        <button class="close-btn" id="close-auth-modal" type="button" aria-label="Close sign-in modal">×</button>
+      </div>
+      <form id="auth-form">
+        <div class="form-group">
+          <label for="auth-email">Email address</label>
+          <input id="auth-email" type="email" required placeholder="you@example.com" />
+        </div>
+        <button class="primary-btn submit-btn" id="auth-submit-btn" type="submit">Send sign-in link</button>
+        <p class="field-hint" id="auth-status-msg"></p>
       </form>
     </div>
   </div>
-  <div class="toast" id="toast"></div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="supabase/config.js"></script>
   <script src="supabase-client.js"></script>
+  <script type="module" src="three-city.js"></script>
+  <script type="module" src="street-walk-3d.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

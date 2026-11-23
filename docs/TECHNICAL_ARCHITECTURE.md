@@ -1,21 +1,23 @@
 # Technical architecture
 
-## Current prototype
-Browser (HTML/CSS/JS) → localStorage for demo reports and points. Leaflet renders map markers using OpenStreetMap tiles.
+## Runtime stack
+- **Node.js + Express 5 (`server.js`)**: Serves static web assets, mounts `node_modules/three` locally under `/vendor/three`, blocks sensitive server/schema files (`/server.js`, `/package.json`, `/supabase/schema.sql`, `/supabase/functions/*`), sets security response headers, and exposes JSON API routes:
+  - `GET /api/capabilities` — reports whether server-side `GEMINI_API_KEY` is configured and advertises upload limits (with `requiresMapsApiKey: false`).
+  - `POST /api/triage-image` — validates base64 JPEG/PNG/WebP payloads (up to 5 MB binary) and queries `@google/genai` (`gemini-4-hydrogen`) using structured JSON `responseSchema`.
+  - `POST /api/triage-issue` — evaluates report title, location, description, safety level, and recent report summaries for structured triage and duplicate candidates.
+- **3D Jaipur Digital Twin (`three-city.js`) & 3D Twin Street Corridor (`street-walk-3d.js`)**: ES modules loaded via `/vendor/three` (with automatic CDN importmap fallback on static GitHub Pages). Constructs a labelled procedural 3D model of Jaipur and an interactive first-person street-level corridor for offline/zero-key inspection.
+- **2D Map, Layer Panel & Zero-API 3D Street Explorer (`app.html`, `app.js`, `styles.css`)**: Synchronized 6-view SPA (`Overview`, `3D Digital Twin`, `City Map`, `Issue Reports`, `Analytics & Impact`, `Admin Console`) using Leaflet `1.9.4` + animated per-category Layer Control Panel, MapLibre GL `4.7.1` + OpenFreeMap 3D extruded OSM buildings, optional Panoramax open street photos, strict HTML escaping (`escapeHTML`), URL scheme checks (`isSafeImageUrl`), and CSV formula neutralization (`neutralizeCsvCell`).
+- **Landing Experience (`index.html`, `landing.css`, `landing.js`)**: 10-section responsive page with `IntersectionObserver` lazy loading for all 7 `assets/videos/flow-approved/01..07*.mp4` assets and reduced-motion pause controls.
 
-## Intended production architecture
-Citizen web app → authenticated API → Supabase Postgres + Storage → authorised admin console.
-Image classification should run server-side through a model provider. The server should return category, confidence and a short explanation; low-confidence or safety-critical reports must be reviewed by a person.
+## Cloud persistence & RLS (`supabase/schema.sql`, `supabase-client.js`)
+- Citizen web app → Supabase Postgres (`profiles`, `issues`, `issue_events`) + Private Storage (`issue-photos`) + Edge Function (`supabase/functions/triage-image/index.ts`).
+- Row Level Security enforces:
+  - Public read on `issues` (never exposing personal user emails).
+  - Authenticated resident insert (`auth.uid() = user_id`).
+  - Admin-only status updates (`profiles.is_admin = true`) with automatic `issue_events` audit entries.
+  - Owner/admin-only signed URL access for uploaded photos.
 
-## Security requirements before real deployment
-- Supabase Row Level Security on every user-facing table
-- Authenticated admin role enforced server-side, never by a client-side toggle
-- File type, file size and image-content validation
-- Strip EXIF metadata before storage where feasible
-- Rate limiting, abuse reporting and audit logs
-- Collect only necessary personal data; publish a clear retention policy
-- Never expose service-role keys or model API keys in client code
-- Provide deletion/contact process and accessibility support
-
-## Priority model
-The current demo rules are intentionally simple and explainable. A future model should combine safety impact, obstruction, issue type, repeat reports and human review. Avoid using popularity alone as a priority signal.
+## Security & honesty guardrails
+- API keys (`GEMINI_API_KEY`) live strictly in server environment variables (`process.env` or Supabase secrets), never in browser JS.
+- Every AI triage response carries `requires_human_review: true`. If AI fails or is unconfigured, the UI displays an honest status rather than fabricating model results.
+- Location access via `navigator.geolocation` runs strictly when the user presses **Use GPS (optional)**.

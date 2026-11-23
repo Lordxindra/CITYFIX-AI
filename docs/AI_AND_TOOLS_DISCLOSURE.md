@@ -1,25 +1,20 @@
 # AI, tools and third-party disclosure
 
-Update this file before final submission so it matches the tools actually used by the registered team.
+## Runtime frameworks, libraries, and APIs used
+- **Node.js & Express (`^5.3.0`)**: Local web server, static asset delivery, `/vendor/three` module hosting, and server-side AI proxy routes (`server.js`).
+- **Three.js (`^0.187.0`)**: Procedural 3D Jaipur Digital Twin (`three-city.js`) and offline 3D Twin street corridor (`street-walk-3d.js`) using `OrbitControls` and `RoomEnvironment`.
+- **Google Gemini via `@google/genai` (`^3.6.1`, `gemini-4-hydrogen`)**: Server-side structured JSON photo/text issue triage and duplicate checking (`/api/triage-image`, `/api/triage-issue`) plus optional Supabase Edge Function (`supabase/functions/triage-image/index.ts`).
+- **Leaflet (`1.9.4`), MapLibre GL (`4.7.1`), OpenStreetMap, OpenFreeMap & Panoramax**: Interactive 2D geospatial mapping with animated category layer toggles, zero-API-key 3D extruded OSM Jaipur buildings, and open crowd-sourced Panoramax street imagery.
+- **Supabase JS v2, Postgres, Auth, Storage, Edge Functions**: Optional cloud authentication, RLS-enforced issue/audit persistence, and private photo storage.
+- **Google Fonts**: `Urbanist`, `DM Sans`, and `JetBrains Mono`.
+- **Supplied Media Assets**: Seven curated `.mp4` scenes in `assets/videos/flow-approved/` (`01_Jaipur_Cinematic_Reveal.mp4` – `07_Future_of_Jaipur_Final.mp4`) plus an edited 66.5s composite launch film (`assets/videos/cityfix-launch-film.mp4`).
 
-## Tools used in the current prototype
-- ChatGPT: assisted with ideation, code drafting, documentation and copy editing. Team members must review, understand, test and be able to explain the implementation.
-- Visual Studio Code and Git/GitHub: development and source control.
-- HTML, CSS and JavaScript: frontend.
-- Leaflet 1.9.4: interactive maps.
-- OpenStreetMap: map tiles and attribution.
-- Google Fonts: DM Sans and Space Grotesk typography.
-- Supabase JS v2, Supabase Postgres, Auth, Storage and Edge Functions: optional backend integration; requires the team's own project configuration and deployment.
-- Gemini API: optional server-side image triage; requires the team's own API key and deployed Edge Function.
-
-## Data sources
-- Synthetic sample reports and approximate coordinates are used in demo mode.
-- No official Jaipur municipal dataset is currently included.
-- Do not describe illustrative ward leaderboard values as official statistics.
-- Add any public dataset actually used, including publisher, URL, licence and retrieval date.
+## Data sources & honesty disclosures
+- **Demo dataset**: Default reports (`CF-1021`–`CF-1024`), Jaipur coordinates, and participation points are synthetic seed examples clearly labelled in the UI.
+- **3D city geometry**: Procedural Three.js geometry (no external `.glb`/`.gltf` model was supplied in the repository) alongside OpenStreetMap building footprints via OpenFreeMap.
+- **No official municipal feed**: No Jaipur Municipal Corporation API or live government dataset is connected.
 
 ## AI limitations
-Image triage is an assistive suggestion, not a final decision. It can misclassify images, miss context or express uncertainty. A human must review each suggestion. Do not upload identifiable people, private documents or sensitive images.
-
-## Before submission
-Remove any tool or API from this list that was not used. Add any extra tool, library, API, model, dataset or AI system that the team actually uses.
+- Gemini triage produces assistive structured suggestions (`requires_human_review: true`), never final municipal priority rulings.
+- When `GEMINI_API_KEY` is absent on an external server, both photo and text triage fall back transparently to clearly labelled local browser heuristics rather than blocking the reporting flow.
+- Citizens are instructed not to upload faces, vehicle license plates, or private documents.

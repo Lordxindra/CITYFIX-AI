@@ -1,76 +1,55 @@
-﻿# CITYFIX AI
-### Report less. Resolve more.
+# CITYFIX AI — Smart City Command Center
+### See your city clearly. Prioritise what matters.
 
-CityFix AI is an independent civic-tech buildathon prototype for documenting public-space issues, viewing them on a map, and making triage reasoning and report status easier to understand.
+CityFix AI is an independent civic-tech buildathon prototype for Jaipur, Rajasthan that connects citizen issue reporting, an interactive procedural Three.js 3D Digital Twin, OpenStreetMap 2D mapping, server-side Gemini AI triage, and role-gated operations tracking.
 
 ## Public links
 - Landing page: https://lordxindra.github.io/CITYFIX-AI/
-- Interactive dashboard: https://lordxindra.github.io/CITYFIX-AI/app.html
+- Interactive Command Center: https://lordxindra.github.io/CITYFIX-AI/app.html
 - Source code: https://github.com/Lordxindra/CITYFIX-AI
 
-## Run locally
-Run: python -m http.server 8000
-Open http://localhost:8000/ for the landing page or http://localhost:8000/app.html for the dashboard.
+## Run locally (recommended full-stack Express server)
+1. Install dependencies: `npm install`
+2. Optionally set `GEMINI_API_KEY` in your environment (see `.env.example`) for server-side Gemini photo & text triage.
+3. Start the server: `npm start` (runs `node server.js` on port `3000`).
+4. Open `http://localhost:3000/` for the cinematic landing page or `http://localhost:3000/app.html` for the Command Center.
+
+> Static fallback: Opening the site on GitHub Pages still works cleanly for UI, 3D Digital Twin, 2D Leaflet map, and local demo persistence (with Three.js loaded from `/vendor/three` when served by Express or Supabase Edge Functions when configured).
 
 ## Current working functionality
-- Responsive public landing page
-- Dashboard with overview metrics and report queue
-- Interactive Leaflet map using OpenStreetMap tiles
-- Report submission and image preview
-- Transparent rule-based priority suggestions in demo mode
-- Search, status and category filters
-- Demo status workflow and community points
-- Local browser persistence
-- Optional Supabase authentication, shared reports and private photo upload (requires project configuration)
-- Optional server-side Gemini image triage function (requires Supabase deployment and Gemini API key)
+- **Cinematic 10-section landing site** (`index.html`, `landing.css`, `landing.js`) integrating all 7 supplied Jaipur showcase videos (`assets/videos/flow-approved/01_*.mp4` – `07_*.mp4`) with lazy loading, dark scrims, and reduced-motion pause control.
+- **Interactive Procedural 3D Jaipur Digital Twin** (`three-city.js`) built with Three.js `0.187.0` (`PerspectiveCamera`, `OrbitControls`, `RoomEnvironment`, raycasted building and issue beacon inspection, proximity marker clustering, category/severity/search filters, camera presets, collapsible bottom dock, and automatic 2D Leaflet fallback when WebGL is unavailable).
+- **Synchronized 2D City Map, Layer Controls & Zero-API 3D Street Explorer** (`app.html`, `app.js`, `street-walk-3d.js`) using Leaflet `1.9.4` + animated per-category Layer Control Panel, MapLibre GL `4.7.1` + OpenFreeMap 3D extruded OSM buildings, optional Panoramax open street-level photos, and a Three.js 3D Twin street-corridor fallback (zero map API key required).
+- **Server-side Gemini AI Triage & Duplicate Check** (`server.js` via `@google/genai` `gemini-4-hydrogen` at `/api/triage-image` and `/api/triage-issue`, plus optional Supabase Edge Function `supabase/functions/triage-image/index.ts`). If no `GEMINI_API_KEY` is configured, both photo and text triage fall back cleanly to transparent client-side local heuristic previews.
+- **Citizen Reporting & Reference Tracking** with JPEG/PNG/WebP preview (5 MB limit), consent-only GPS + quick Jaipur locality buttons, upload progress, `CF-XXXX` reference IDs, and Reference ID lookup.
+- **Admin Operations Console** with priority queue, audit notes, `issue_events` history, Supabase `profiles.is_admin` verification (or local Demo Admin toggle in demo mode), and formula-safe CSV / JSON exports.
+- **Analytics & Community Visibility** computed strictly from recorded reports (`Open`, `In progress`, `Resolved`, category mix, geographic distribution, and timeline).
 
 ## Demo data and honesty
-The default dashboard seed reports, coordinates, ward leaderboard and points are synthetic examples. They are visibly described as demo data and are not official Jaipur statistics. A report submitted in local demo mode stays in that browser. Nothing is sent to a municipal authority. CityFix AI is not affiliated with Jaipur Municipal Corporation or any government body.
+- Default seed reports (`CF-1021` to `CF-1024`), coordinates, participation points (`+30 pts` per local demo report), and ward distributions are synthetic examples visibly labelled as demo data—not official Jaipur Municipal Corporation statistics.
+- No `.glb` or `.gltf` 3D city model is present in `assets/`; the 3D Digital Twin uses a clearly labelled procedural Three.js city generator.
+- Reports submitted in local demo mode remain in browser `localStorage`. CityFix AI is not affiliated with any government authority.
 
-## Configure the optional cloud backend
-1. Create a Supabase project.
-2. Run supabase/schema.sql in the Supabase SQL Editor.
-3. Copy the Project URL and publishable key into supabase/config.js. The publishable key is designed for browser use; never paste a service-role or secret key into the website.
-4. Deploy the function: supabase functions deploy triage-image.
-5. Add server-side secrets: supabase secrets set GEMINI_API_KEY=YOUR_KEY GEMINI_MODEL=gemini-2.5-flash.
-6. Sign in from the dashboard using the Cloud sign in button. A one-time email link is sent.
-7. Promote the intended administrator by running the commented SQL statement at the end of supabase/schema.sql, replacing the email with the real admin email.
-8. Test report submission, public list visibility and admin-only status updates with separate resident/admin accounts.
-
-Supabase client setup uses the browser SDK and a publishable key with Row Level Security. AI provider credentials stay in the Edge Function secret store, never in frontend code.
-
-## AI image triage
-The Edge Function accepts an authenticated image (JPEG, PNG or WebP, max 5 MB), requests a structured classification from Gemini, validates the returned category/priority, and marks the result as requiring human review. AI output is a suggestion, not a verified finding or official priority decision.
+## Configure the optional Supabase cloud backend
+1. Create a Supabase project and run `supabase/schema.sql` in the SQL Editor.
+2. Set your Project URL and publishable key in `supabase/config.js` (never place `service_role`, `sb_secret_*`, or `GEMINI_API_KEY` in client code).
+3. Deploy the Edge Function (`supabase functions deploy triage-image`) and set `GEMINI_API_KEY` in Supabase Secrets if using Supabase-hosted AI without the Express backend.
+4. Sign in from the Command Center via **Cloud sign in** (passwordless email link), and promote an admin account using the commented SQL snippet at the end of `supabase/schema.sql`.
 
 ## Project documentation
-- Product overview: docs/PRODUCT_OVERVIEW.md
-- Technical architecture: docs/TECHNICAL_ARCHITECTURE.md
-- Problem validation plan: docs/VALIDATION_PLAN.md
-- Brand kit: docs/BRAND_KIT.md
-- Launch film script: docs/LAUNCH_FILM_SCRIPT.md
-- Explainer demo script: docs/DEMO_SCRIPT.md
-- Social post drafts: docs/SOCIAL_POSTS.md
-- Final submission checklist: docs/FINAL_SUBMISSION_CHECKLIST.md
-- Team roles: docs/TEAM_ROLES.md
-- AI and tools disclosure: docs/AI_AND_TOOLS_DISCLOSURE.md
-- Supabase and AI setup: docs/SUPABASE_SETUP.md
+- Product overview: `docs/PRODUCT_OVERVIEW.md`
+- Technical architecture: `docs/TECHNICAL_ARCHITECTURE.md`
+- Problem validation plan: `docs/VALIDATION_PLAN.md`
+- Brand kit: `docs/BRAND_KIT.md`
+- Launch film script: `docs/LAUNCH_FILM_SCRIPT.md`
+- Explainer demo script: `docs/DEMO_SCRIPT.md`
+- Social post drafts: `docs/SOCIAL_POSTS.md`
+- Final submission checklist: `docs/FINAL_SUBMISSION_CHECKLIST.md`
+- Team roles: `docs/TEAM_ROLES.md`
+- AI and tools disclosure: `docs/AI_AND_TOOLS_DISCLOSURE.md`
+- Supabase and AI setup: `docs/SUPABASE_SETUP.md`
 
-## Tech and third-party resources
-HTML, CSS, JavaScript, Supabase JS v2 (optional), Supabase Postgres/Auth/Storage/Edge Functions (optional), Gemini API (optional), Leaflet 1.9.4, OpenStreetMap tiles, Google Fonts. See docs/THIRD_PARTY_NOTICES.md.
-
-## Limitations
-- Supabase and Gemini are not active until the owner supplies project credentials and deploys the backend.
-- The local demo uses browser localStorage and synthetic sample reports.
-- The map only places reports with coordinates; demo coordinates are illustrative.
-- AI classification requires a deployed Edge Function and a valid provider key.
-- No municipal integration, service-level agreement, dispatch or real-world resolution is claimed.
-- The team must validate the problem with real residents and replace no data with fabricated findings.
-
-## Judging demo flow
-1. Start on the landing page and explain the user problem.
-2. Open the interactive dashboard and explore the Jaipur demo map.
-3. Submit a clearly labelled demo report and show the transparent triage.
-4. If cloud setup is complete, sign in and show a shared report from another browser.
-5. If AI setup is complete, analyse a user-provided image and explain the confidence and human-review step.
-6. Show admin-only status changes and the event history.
-7. End with validated resident feedback, limitations and the next pilot step.
+## Known limitations
+- Gemini photo/text LLM triage uses local heuristic fallbacks unless `GEMINI_API_KEY` is set server-side in Express (`process.env.GEMINI_API_KEY`) or in Supabase Edge Function secrets.
+- Without Supabase sign-in, reports and demo admin transitions persist only in the local browser (`localStorage`).
+- No municipal dispatch integration or guaranteed SLA is claimed.

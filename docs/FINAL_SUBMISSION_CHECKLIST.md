@@ -2,36 +2,26 @@
 
 Deadline in the supplied problem statement: Saturday, 28 November 2026, 11:59 PM IST. Late submissions are not accepted.
 
-## Required deliverables
-- [x] Public landing page: https://lordxindra.github.io/CITYFIX-AI/
-- [x] Working public prototype: https://lordxindra.github.io/CITYFIX-AI/app.html
-- [x] GitHub source repository and setup instructions: https://github.com/Lordxindra/CITYFIX-AI
-- [x] Product overview, technical approach, limitations and future improvements in repository docs
-- [x] Brand identity direction and logo source in repository
-- [x] Brand kit PDF prepared in the downloadable media pack
-- [x] Project documentation PDF prepared in the downloadable media pack
-- [ ] Conduct and document real resident interviews or other real problem validation
-- [x] 75-second launch-film draft rendered; review narration and final edit before submission
-- [x] 150-second explainer draft rendered from current product screenshots; replace/insert a real screen recording of the live workflow before final submission
-- [x] Five original social-post artwork files prepared in the downloadable media pack
-- [ ] Create a new project-branded Instagram account and a new project-branded X account
-- [ ] Publish at least five original posts on Instagram and X, each with both required hashtags and organiser tags
-- [ ] Save links to all posts
-- [ ] Capture a screenshot of the team's most-liked post and its like count at the deadline
-- [ ] Add the final list of AI tools, frameworks, libraries, APIs and datasets used
-- [ ] Verify all links open in a signed-out/incognito browser
-- [ ] Team lead submits once through the official TuteDude team page
+## Engineering & product deliverables
+- [x] Redesigned 10-section cinematic landing page (`index.html`, `landing.css`, `landing.js`) with all 7 `flow-approved` Jaipur videos
+- [x] Interactive Smart City Command Center (`app.html`, `app.js`, `styles.css`)
+- [x] Interactive procedural Three.js 3D Jaipur Digital Twin (`three-city.js`, local `/vendor/three`) with orbit controls, clustering, search/severity/category filters, building & issue inspection, and WebGL fallback
+- [x] Interactive City Map with animated category Layer Control Panel (`.layer-toggle-row`) + Zero-API-Key 3D Street Explorer (`MapLibre + OpenFreeMap 3D OSM Buildings`, optional `Panoramax` open street photos, and Three.js `3D Twin Corridor` in `street-walk-3d.js`)
+- [x] Server-side Gemini AI endpoints (`server.js`: `/api/capabilities`, `/api/triage-image`, `/api/triage-issue`) using `@google/genai` (`gemini-4-hydrogen`) + aligned Supabase Edge Function (`supabase/functions/triage-image/index.ts`) + zero-API local photo/rule fallback
+- [x] Citizen reporting workflow (photo MIME/size validation, consent-only GPS + quick Jaipur locations, AI/heuristic triage & duplicate check, confirmation ID, and Reference ID lookup)
+- [x] Supabase config wired (`supabase/config.js`) + Admin Command Center with `profiles.is_admin` permission checks, local Demo Admin preview toggle, `issue_events` audit log, and sanitized CSV/JSON exports
+- [x] GitHub source repository & brand/script docs (`README.md`, `docs/BRAND_KIT.md`, `docs/DEMO_SCRIPT.md`, `docs/LAUNCH_FILM_SCRIPT.md`, `docs/SOCIAL_POSTS.md`, `docs/RESEARCH_TEMPLATE.md`)
+- [x] Edited 66.5-second 1280×720 Launch Film generated (`assets/videos/cityfix-launch-film.mp4`) from the 7 Jaipur scenes with title/CTA cards and captions
 
-## Social scoring
-The supplied brief says 5 marks are for the team's most-liked post (proportional to the top-performing team) and 5 marks are for content quality, judged on communication effectiveness. Engagement must be organic. Paid promotions, purchased likes, bots and engagement groups are prohibited.
+## External & manual items still required by the team
+- [ ] Push final code updates to GitHub (`Lordxindra/CITYFIX-AI`) and verify live deployment (AI Studio Shared App URL, Render, or GitHub Pages)
+- [ ] Conduct and document 5–10 real resident/student interviews in `docs/RESEARCH_TEMPLATE.md`
+- [ ] Screen-record the 2–3 min product walkthrough (`docs/DEMO_SCRIPT.md`) and upload both videos (YouTube/Drive public links)
+- [ ] Publish 5 original Instagram + X posts (`docs/SOCIAL_POSTS.md`), engage organically, and save screenshots + public post links
+- [ ] Verify all submission URLs (live app, GitHub, videos, social links) open in a signed-out/incognito browser before submitting on TuteDude
 
 ## Compliance and integrity
-- Keep synthetic, demo and estimated data labelled.
-- Do not claim verified city impact, municipal response or government affiliation.
-- Do not use government logos without permission.
-- Obtain consent before filming in private spaces; blur faces and number plates unless consent is obtained.
-- Disclose third-party tools, APIs, datasets and AI assistance.
-- Team members must be eligible TuteDude students and able to explain the work.
-
-## Team-size note
-The supplied PDF says “Every team has 5 members”; the public Buildathon page describes teams of 2 to 5. Confirm the accepted size in the registered team dashboard or with the organiser before final submission. Do not invent members or use non-eligible participants.
+- Keep synthetic, demo and estimated data clearly labelled.
+- Never claim verified city impact, municipal dispatch, external GLB models not present in `/assets/`, or government affiliation.
+- Obtain consent before filming in private spaces and blur faces/number plates.
+- Never commit `GEMINI_API_KEY`, `service_role`, or `sb_secret_*` keys in client code.

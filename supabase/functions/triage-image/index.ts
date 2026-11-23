@@ -31,17 +31,17 @@ serve(async (req) => {
     }
 
     const apiKey = Deno.env.get("GEMINI_API_KEY");
-    const model = Deno.env.get("GEMINI_MODEL") || "gemini-2.5-flash";
+    const model = Deno.env.get("GEMINI_MODEL") || "gemini-4-hydrogen";
     if (!apiKey) return new Response(JSON.stringify({ error: "AI service is not configured. Add GEMINI_API_KEY to Supabase function secrets." }), { status: 503, headers: cors });
 
-    const prompt = `Inspect this user-submitted photo of a possible public-space issue. Return ONLY JSON with keys: category (one of road_damage, garbage, waterlogging, streetlight, other), priority (normal, high, critical), confidence (0 to 1), summary (max 24 words), safety_reason (max 30 words), visible_evidence (array of up to 4 short strings). Do not infer an exact address, identity, cause, or whether an authority has verified it. If the image does not clearly show an urban issue, use category other, priority normal, and explain uncertainty. This is a triage suggestion for human review, not an official assessment.`;
+    const prompt = `Inspect this user-submitted photo of a possible public-space issue. Return ONLY JSON with keys: category (one of road_damage, garbage, waterlogging, streetlight, other), priority (normal, high, critical), confidence (0 to 1), summary (max 24 words), safety_reason (max 30 words), recommended_department (short department name), visible_evidence (array of up to 4 short strings). Do not infer an exact address, identity, cause, or whether an authority has verified it. If the image does not clearly show an urban issue, use category other, priority normal, and explain uncertainty. This is a triage suggestion for human review, not an official assessment.`;
 
     const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         contents: [{ parts: [{ text: prompt }, { inline_data: { mime_type: mimeType, data: imageBase64 } }] }],
-        generationConfig: { responseMimeType: "application/json", temperature: 0.1 }
+        generationConfig: { responseMimeType: "application/json" }
       })
     });
     const payload = await response.json();
@@ -60,6 +60,7 @@ serve(async (req) => {
     if (!allowedPriorities.includes(result.priority)) result.priority = "normal";
     result.confidence = Math.max(0, Math.min(1, Number(result.confidence) || 0));
     result.requires_human_review = true;
+    result.provider = model;
 
     return new Response(JSON.stringify(result), { status: 200, headers: cors });
   } catch (error) {

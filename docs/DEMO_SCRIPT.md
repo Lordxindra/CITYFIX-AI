@@ -1,22 +1,34 @@
-# 2–3 minute explainer video script
+# Buildathon Live & Video Demo Script (10-Step Judge Walkthrough)
 
-**0:00–0:20 — The problem**  
-A pothole, a dark street and overflowing waste may look like separate issues. For residents, the common frustration is not knowing where to report, what happens next or which problem needs attention first.
+1. **0:00–0:20 — Cinematic Hook (`index.html`)**
+   - Open the landing page showing the Jaipur hero video (`01_Jaipur_Cinematic_Reveal.mp4`), clear typography, and single-click entry into the Command Center.
+   - Scroll briefly through *Urban Reality* (`02_Urban_Problems.mp4`) and *3D Digital Twin* (`04_Jaipur_3D_Digital_Twin.mp4`) to frame the civic problem.
 
-**0:20–0:40 — The idea**  
-Meet CityFix AI: a citizen-first city issue intelligence prototype. It brings reporting, a shared map, explainable triage and visible status into one experience.
+2. **0:20–0:40 — Command Center Overview (`app.html#overview`)**
+   - Open the Command Center and point out the honest mode banner (showing Demo vs. Supabase Cloud mode and live `/api/capabilities` AI status).
+   - Review open/resolved KPIs, Priority Queue, and the interactive Leaflet snapshot.
 
-**0:40–1:20 — Product demo**  
-Show the overview dashboard. Open the city map and click a sample marker. Explain that sample data is clearly labelled. Open Report an issue, enter a real example from your validation (with permission), choose the safety impact and submit. Show the triage explanation and new report in the table.
+3. **0:40–1:15 — Interactive 3D Jaipur Digital Twin (`app.html#twin`)**
+   - Switch to **3D Digital Twin**. Orbit, pan, and zoom smoothly around the procedural Jaipur districts (Heritage Pink City, Civic Core, Central Park).
+   - Click camera presets (`Heritage Core`, `Civic Core`, `Top-Down`) and toggle proximity clustering.
+   - Click a critical issue beacon to open the 3D Inspector, then click a building block to see nearby district context.
 
-**1:20–1:50 — Beyond reporting**  
-Show status management in demo admin mode and community points. Explain that the current admin control is a prototype interaction, not a secure government workflow.
+4. **1:15–1:40 — City Map Layers & Zero-API 3D Street Explorer (`app.html#explore`)**
+   - Switch to **City Map**, toggle category layers (`Road damage`, `Garbage`, `Streetlight`), and click a report in the synchronized queue.
+   - Switch to **Split** or **3D Street View** to showcase real 3D OpenStreetMap Jaipur buildings (OpenFreeMap, zero API key), Panoramax open street photos (where covered), and the **3D Twin Corridor** toggle.
 
-**1:50–2:20 — Innovation and next step**  
-The innovation is connecting a report to location, explainable priority and community visibility. The next phase is secure cloud storage, role-based access and an evaluated vision model with human review.
+5. **1:40–2:15 — Citizen Reporting & Gemini AI Triage (`+ Report an issue`)**
+   - Open the Report Modal, choose a Jaipur district quick-pin (or optional GPS), attach a sample photo, and click **Analyse photo with AI** / **Run AI text & duplicate check**.
+   - Show how structured JSON returns category, priority, department hint, visible evidence, duplicate alerts, and the mandatory *human review required* notice.
+   - Submit the report to receive a trackable `CF-XXXX` reference ID.
 
-**2:20–2:40 — Impact**  
-CityFix AI aims to make civic problems easier to see, understand and follow up. It is a prototype, and local impact will be measured through resident feedback and validated pilot data.
+6. **2:15–2:35 — Citizen Tracking & Analytics (`#reports`, `#impact`)**
+   - Enter the new `CF-XXXX` ID in the Reference Tracker to pull up the Issue Detail Drawer and status timeline.
+   - Show Analytics charts computed directly from recorded issues.
 
-**2:40–2:50 — Closing**  
-CityFix AI. Report less. Resolve more — together.
+7. **2:35–2:55 — Admin Operations Console & Exports (`#admin`)**
+   - Open **Admin Console**. Highlight the verified RLS permission card (and toggle local Demo Admin mode when running without cloud admin auth).
+   - Add an audit note, resolve an issue, inspect the new `issue_events` audit entry, and demonstrate **Export CSV** / **Export JSON**.
+
+8. **2:55–3:05 — Honesty & Closing**
+   - Note that default records are clearly labelled demo data, no external government affiliation is claimed, and close with: *"CityFix AI — See your city clearly. Prioritise what matters."*
