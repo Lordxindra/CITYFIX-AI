@@ -149,9 +149,6 @@ const streetViewState = {
   osmMapReady: false,
   osmMarkers: [],
   targetMarker: null,
-  photos: [],
-  photoIndex: 0,
-  photoCardVisible: true,
   activeTarget: {
     lat: 26.9163,
     lng: 75.8087,
@@ -361,56 +358,38 @@ function canMutateStatus() {
 }
 
 function updateEnvironmentUI() {
-  const banner = $("#mode-banner");
-  const bannerText = $("#mode-banner-text");
   const envLine = $("#env-status-line");
   const workspaceLabel = $("#workspace-mode-label");
   const userName = $("#user-display-name");
   const userRole = $("#user-role-label");
   const avatar = $("#user-avatar");
   const cloudBtn = $("#cloud-auth");
-  const aiText = $("#ai-capability-text");
 
   if (cloudState.configured && cloudState.cloudLoaded) {
-    banner.classList.add("cloud");
     if (cloudState.session?.user) {
       const email = cloudState.session.user.email || "Signed-in user";
       const displayName = cloudState.profile?.display_name || email.split("@")[0];
-      bannerText.textContent = `Supabase cloud active · Signed in as ${email}`;
-      envLine.textContent = "JAIPUR WORKSPACE · SUPABASE CLOUD CONNECTED";
-      workspaceLabel.textContent = "Shared cloud workspace · RLS active";
-      userName.textContent = displayName;
-      userRole.textContent = cloudState.isAdmin ? "Authorised Cloud Admin" : "Authenticated Resident";
-      avatar.textContent = displayName.slice(0, 2).toUpperCase();
-      cloudBtn.textContent = "Sign out";
+      if (envLine) envLine.textContent = "JAIPUR WORKSPACE · SUPABASE CLOUD CONNECTED";
+      if (workspaceLabel) workspaceLabel.textContent = "Shared cloud workspace · RLS active";
+      if (userName) userName.textContent = displayName;
+      if (userRole) userRole.textContent = cloudState.isAdmin ? "Authorised Cloud Admin" : "Authenticated Resident";
+      if (avatar) avatar.textContent = displayName.slice(0, 2).toUpperCase();
+      if (cloudBtn) cloudBtn.textContent = "Sign out";
     } else {
-      bannerText.textContent = "Supabase cloud readable (public view) · Sign in to submit cloud reports";
-      envLine.textContent = "JAIPUR WORKSPACE · CLOUD READ-ONLY";
-      workspaceLabel.textContent = "Cloud public feed · Sign in to post";
-      userName.textContent = "Guest Viewer";
-      userRole.textContent = "Not signed in";
-      avatar.textContent = "GV";
-      cloudBtn.textContent = "Cloud sign in";
+      if (envLine) envLine.textContent = "JAIPUR WORKSPACE · CLOUD READ-ONLY";
+      if (workspaceLabel) workspaceLabel.textContent = "Cloud public feed · Sign in to post";
+      if (userName) userName.textContent = "Guest Viewer";
+      if (userRole) userRole.textContent = "Not signed in";
+      if (avatar) avatar.textContent = "GV";
+      if (cloudBtn) cloudBtn.textContent = "Cloud sign in";
     }
   } else {
-    banner.classList.remove("cloud");
-    bannerText.textContent = "Demo mode active: showing synthetic Jaipur seed reports saved locally in your browser.";
-    envLine.textContent = "JAIPUR WORKSPACE · LOCAL DEMO DATA";
-    workspaceLabel.textContent = "Local demo workspace · Synthetic seed data";
-    userName.textContent = "CityFix Resident";
-    userRole.textContent = demoAdminMode ? "Demo admin preview (local)" : "Local demo session";
-    avatar.textContent = "CR";
-    cloudBtn.textContent = cloudState.configured ? "Cloud sign in" : "Cloud unconfigured";
-  }
-
-  if (aiText) {
-    if (!serverState.checked) {
-      aiText.textContent = "Checking server AI status…";
-    } else if (serverState.aiConfigured) {
-      aiText.textContent = `AI triage ready (${serverState.model}) · Street View: Free OSM 3D + Fallback`;
-    } else {
-      aiText.textContent = "Zero-API Mode: Rule & local photo triage + Free OSM 3D Street View active";
-    }
+    if (envLine) envLine.textContent = "JAIPUR WORKSPACE · LOCAL DEMO DATA";
+    if (workspaceLabel) workspaceLabel.textContent = "Local demo workspace · Synthetic seed data";
+    if (userName) userName.textContent = "CityFix Resident";
+    if (userRole) userRole.textContent = demoAdminMode ? "Demo admin preview (local)" : "Local demo session";
+    if (avatar) avatar.textContent = "CR";
+    if (cloudBtn) cloudBtn.textContent = cloudState.configured ? "Cloud sign in" : "Cloud unconfigured";
   }
 }
 
@@ -1114,71 +1093,6 @@ function updateStreetViewPresetHighlight(lat, lng) {
   });
 }
 
-function renderPanoramaxPhoto() {
-  const card = $("#streetview-photo-card");
-  const toggleBtn = $("#streetview-photo-toggle");
-  const imgEl = $("#streetview-photo-img");
-  const labelEl = $("#streetview-photo-label");
-  const lightboxImg = $("#streetview-lightbox-img");
-  const lightboxCap = $("#streetview-lightbox-caption");
-
-  const list = streetViewState.photos || [];
-  if (!list.length || streetViewState.engine === "procedural") {
-    if (card) card.hidden = true;
-    if (toggleBtn) toggleBtn.hidden = list.length === 0 || streetViewState.engine === "procedural";
-    return;
-  }
-
-  const idx = ((streetViewState.photoIndex % list.length) + list.length) % list.length;
-  streetViewState.photoIndex = idx;
-  const item = list[idx];
-
-  if (toggleBtn) {
-    toggleBtn.hidden = false;
-    toggleBtn.textContent = `Street Photo (${list.length})`;
-    toggleBtn.setAttribute("aria-pressed", String(streetViewState.photoCardVisible));
-  }
-  if (card) card.hidden = !streetViewState.photoCardVisible;
-  if (imgEl && item.thumbUrl) imgEl.src = item.thumbUrl;
-  if (labelEl) labelEl.textContent = `Panoramax ${idx + 1}/${list.length} · Free OSM`;
-  if (lightboxImg && item.fullUrl) lightboxImg.src = item.fullUrl;
-  if (lightboxCap) {
-    lightboxCap.textContent = `Panoramax Open Street Photo (${idx + 1}/${list.length}) · ${item.date || "OpenStreetMap Community"}`;
-  }
-}
-
-async function fetchNearbyOpenStreetPhoto(lat, lng, seq) {
-  streetViewState.photos = [];
-  streetViewState.photoIndex = 0;
-  renderPanoramaxPhoto();
-
-  try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 5000);
-    const res = await fetch(
-      `https://api.panoramax.xyz/api/search?place_position=${encodeURIComponent(lng)},${encodeURIComponent(lat)}&place_distance=0-1800&limit=6`,
-      { signal: controller.signal }
-    );
-    clearTimeout(timer);
-    if (!res.ok || seq !== streetViewState.requestSeq) return;
-    const data = await res.json();
-    if (seq !== streetViewState.requestSeq) return;
-
-    const features = Array.isArray(data?.features) ? data.features : [];
-    streetViewState.photos = features
-      .map((f) => ({
-        thumbUrl: f?.assets?.thumb?.href || f?.assets?.sd?.href || "",
-        fullUrl: f?.assets?.hd?.href || f?.assets?.sd?.href || f?.assets?.thumb?.href || "",
-        date: f?.properties?.datetime ? String(f.properties.datetime).slice(0, 10) : "Open Data",
-      }))
-      .filter((p) => /^https:\/\//.test(p.thumbUrl));
-
-    renderPanoramaxPhoto();
-  } catch {
-    // Open photo lookup is strictly optional; 3D OSM & Twin remain active
-  }
-}
-
 function renderOsm3DMarkers() {
   if (!streetViewState.osmMap || !window.maplibregl) return;
 
@@ -1350,23 +1264,19 @@ function syncStreetViewEngineUI() {
   const twinPano = $("#streetview-twin-pano");
   const engineBtn = $("#streetview-engine-toggle");
   const badgeEl = $("#streetview-engine-badge");
-  const lightbox = $("#streetview-photo-lightbox");
 
   if (osmPano) osmPano.hidden = isProc;
   if (twinPano) twinPano.hidden = !isProc;
-  if (lightbox && isProc) lightbox.hidden = true;
 
   if (engineBtn) {
     engineBtn.setAttribute("aria-pressed", String(isProc));
     engineBtn.classList.toggle("active", isProc);
-    engineBtn.textContent = isProc ? "3D OSM Streets (Free)" : "3D Street Fallback";
+    engineBtn.textContent = isProc ? "3D OSM Streets" : "3D Street Fallback";
   }
 
   if (badgeEl) {
-    badgeEl.textContent = isProc ? "THREE.JS 3D STREET · NO API KEY" : "OPENFREEMAP 3D · NO API KEY";
+    badgeEl.textContent = isProc ? "3D STREET FALLBACK" : "3D STREET VIEW";
   }
-
-  renderPanoramaxPhoto();
 
   if (window.CityFixStreet3D?.isInitialized) {
     const visible = isProc && currentView === "explore" && currentMapMode !== "2d";
@@ -1428,11 +1338,6 @@ function activateProceduralStreetView(target, reasonNote) {
     }
   };
 
-  if ($("#streetview-coverage-note")) {
-    $("#streetview-coverage-note").textContent =
-      reasonNote || "3D Street Fallback (Zero API Key · Works Offline) · Drag 360° & walk street";
-  }
-
   if (!window.CityFixStreet3D) {
     if (!streetViewState.awaitingStreet3D) {
       streetViewState.awaitingStreet3D = true;
@@ -1479,18 +1384,13 @@ async function loadStreetViewAtLocation(target) {
   updateStreetViewPresetHighlight(lat, lng);
 
   if (streetViewState.manualProcedural) {
-    activateProceduralStreetView(
-      streetViewState.activeTarget,
-      "3D Street Fallback (Zero API Key · Offline Ready) · Drag 360° & walk street"
-    );
+    activateProceduralStreetView(streetViewState.activeTarget);
     return;
   }
 
   streetViewState.engine = "osm3d";
   syncStreetViewEngineUI();
-  showStreetViewOverlay("Loading 3D OSM Jaipur Streets…", "Streaming free OpenFreeMap 3D buildings — zero API key required.", false);
-
-  fetchNearbyOpenStreetPhoto(lat, lng, seq);
+  showStreetViewOverlay("Loading 3D OSM Jaipur Streets…", "Loading 3D Jaipur street buildings and issue pins.", false);
 
   try {
     const map = await initOsm3DStreetViewerOnce({ lat, lng });
@@ -1504,19 +1404,11 @@ async function loadStreetViewAtLocation(target) {
       duration: 900,
     });
     renderOsm3DMarkers();
-
-    if ($("#streetview-coverage-note")) {
-      $("#streetview-coverage-note").textContent =
-        "OpenFreeMap 3D OSM Buildings (100% Free · No API key) · Drag to orbit 360°, right-drag to tilt";
-    }
     hideStreetViewOverlay();
     setTimeout(() => map.resize(), 90);
   } catch {
     if (seq !== streetViewState.requestSeq) return;
-    activateProceduralStreetView(
-      streetViewState.activeTarget,
-      "3D Street Fallback (Zero API Key · Offline Fallback) · Drag 360° & walk street"
-    );
+    activateProceduralStreetView(streetViewState.activeTarget);
   }
 }
 
@@ -2812,10 +2704,7 @@ function bindEvents() {
       loadStreetViewAtLocation(streetViewState.activeTarget);
     } else {
       streetViewState.manualProcedural = true;
-      activateProceduralStreetView(
-        streetViewState.activeTarget,
-        "3D Street Fallback (Zero API Key · Offline Ready) · Drag 360° & walk street"
-      );
+      activateProceduralStreetView(streetViewState.activeTarget);
     }
   });
 
@@ -2869,32 +2758,6 @@ function bindEvents() {
     if (map) map.easeTo({ bearing: map.getBearing() + 35, duration: 280 });
   });
 
-  $("#streetview-photo-toggle")?.addEventListener("click", () => {
-    streetViewState.photoCardVisible = !streetViewState.photoCardVisible;
-    renderPanoramaxPhoto();
-  });
-
-  $("#streetview-photo-prev")?.addEventListener("click", () => {
-    streetViewState.photoIndex -= 1;
-    renderPanoramaxPhoto();
-  });
-
-  $("#streetview-photo-next")?.addEventListener("click", () => {
-    streetViewState.photoIndex += 1;
-    renderPanoramaxPhoto();
-  });
-
-  const openPhotoLightbox = () => {
-    const lb = $("#streetview-photo-lightbox");
-    if (lb && streetViewState.photos.length) lb.hidden = false;
-  };
-  $("#streetview-photo-expand")?.addEventListener("click", openPhotoLightbox);
-  $("#streetview-photo-thumb-btn")?.addEventListener("click", openPhotoLightbox);
-  $("#streetview-lightbox-close")?.addEventListener("click", () => {
-    const lb = $("#streetview-photo-lightbox");
-    if (lb) lb.hidden = true;
-  });
-
   $("#streetview-recenter")?.addEventListener("click", () => {
     if (streetViewState.engine === "procedural") {
       window.CityFixStreet3D?.recenterOnIssue();
@@ -2912,10 +2775,7 @@ function bindEvents() {
 
   $("#streetview-fallback-twin")?.addEventListener("click", () => {
     streetViewState.manualProcedural = true;
-    activateProceduralStreetView(
-      streetViewState.activeTarget,
-      "3D Street Fallback (Zero API Key · Offline Ready) · Drag 360° & walk street"
-    );
+    activateProceduralStreetView(streetViewState.activeTarget);
   });
 
   $("#streetview-fallback-2d")?.addEventListener("click", () => {

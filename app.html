@@ -109,12 +109,6 @@
         </div>
       </header>
 
-      <div class="mode-banner" id="mode-banner" role="status">
-        <span id="mode-banner-text">Demo mode active: showing synthetic Jaipur seed reports saved locally in your browser.</span>
-        <span class="mode-banner-sep" aria-hidden="true">·</span>
-        <span id="ai-capability-text">Checking server AI status…</span>
-      </div>
-
       <!-- VIEW 1: OVERVIEW -->
       <section class="view active" id="view-overview" aria-labelledby="page-title">
         <div class="stats-grid">
@@ -199,7 +193,7 @@
         <div class="section-intro">
           <div>
             <h2>Geospatial issue explorer &amp; 3D Street Explorer</h2>
-            <p class="muted">Inspect OpenStreetMap issue layers alongside free 3D OSM Jaipur street buildings, open Panoramax street photos, and a 3D Street Fallback—zero API key required.</p>
+            <p class="muted">Inspect OpenStreetMap issue layers alongside 3D Jaipur street buildings and interactive fallback views.</p>
           </div>
           <div class="map-controls-bar">
             <div class="segmented" role="group" aria-label="Map display mode">
@@ -236,8 +230,7 @@
                     <small class="tabular" id="streetview-pov-readout">Heading 0° · Tilt 74°</small>
                   </div>
                   <div class="streetview-actions">
-                    <button class="row-action" id="streetview-engine-toggle" type="button" aria-pressed="false" title="Switch between real 3D OpenStreetMap Jaipur buildings and interactive Three.js street-level view">3D Street Fallback</button>
-                    <button class="row-action" id="streetview-photo-toggle" type="button" aria-pressed="true" hidden>Street Photo</button>
+                    <button class="row-action" id="streetview-engine-toggle" type="button" aria-pressed="false" title="Switch between 3D OpenStreetMap Jaipur buildings and interactive Three.js street-level view">3D Street Fallback</button>
                     <button class="row-action" id="streetview-recenter" type="button">Face target</button>
                   </div>
                 </div>
@@ -255,7 +248,7 @@
                   <div id="streetview-twin-pano" class="streetview-pano" hidden aria-label="Interactive Three.js 3D Street-Level View"></div>
 
                   <div id="streetview-step-controls" class="streetview-step-controls" aria-label="Street walk navigation controls">
-                    <span class="streetview-mode-badge" id="streetview-engine-badge">OPENFREEMAP 3D · NO API KEY</span>
+                    <span class="streetview-mode-badge" id="streetview-engine-badge">3D STREET VIEW</span>
                     <div class="streetview-step-btns">
                       <button class="row-action" id="streetview-step-left" type="button" title="Turn left 35°">↺ Left</button>
                       <button class="row-action" id="streetview-step-fwd" type="button" title="Move forward along road">Walk ↑</button>
@@ -264,31 +257,9 @@
                     </div>
                   </div>
 
-                  <div id="streetview-photo-card" class="streetview-locator-wrap streetview-photo-card" hidden>
-                    <div class="streetview-locator-head">
-                      <span id="streetview-photo-label">Panoramax Open Photo</span>
-                      <div class="streetview-photo-nav">
-                        <button type="button" id="streetview-photo-prev" aria-label="Previous street photo">‹</button>
-                        <button type="button" id="streetview-photo-next" aria-label="Next street photo">›</button>
-                        <button type="button" id="streetview-photo-expand" aria-label="Expand street photo">⤢</button>
-                      </div>
-                    </div>
-                    <button type="button" id="streetview-photo-thumb-btn" class="streetview-photo-thumb-btn" aria-label="Open full street photo">
-                      <img id="streetview-photo-img" alt="OpenStreetMap Panoramax street photo" />
-                    </button>
-                  </div>
-
-                  <div id="streetview-photo-lightbox" class="streetview-photo-lightbox" hidden>
-                    <div class="streetview-lightbox-bar">
-                      <span id="streetview-lightbox-caption">Panoramax Open Street Imagery · CC-BY / Open Data</span>
-                      <button class="row-action" id="streetview-lightbox-close" type="button">Close ×</button>
-                    </div>
-                    <img id="streetview-lightbox-img" alt="Expanded open street photo" />
-                  </div>
-
                   <div id="streetview-overlay" class="streetview-overlay" hidden>
                     <strong id="streetview-overlay-title">Loading 3D Street Explorer…</strong>
-                    <p id="streetview-overlay-msg">Preparing real 3D OpenStreetMap Jaipur buildings and issue markers.</p>
+                    <p id="streetview-overlay-msg">Preparing 3D OpenStreetMap Jaipur buildings and issue markers.</p>
                     <div class="streetview-overlay-actions">
                       <button class="primary-btn" id="streetview-fallback-twin" type="button">Open 3D Street Fallback</button>
                       <button class="secondary-btn" id="streetview-fallback-2d" type="button">Back to 2D Map</button>
@@ -297,7 +268,7 @@
                 </div>
 
                 <div class="map-foot">
-                  <span id="streetview-coverage-note">OpenFreeMap 3D OSM Buildings (No API key) · Drag to rotate 360°, right-drag to tilt</span>
+                  <span></span>
                   <span class="tabular" id="streetview-coords-label">26.9163, 75.8087</span>
                 </div>
               </div>
