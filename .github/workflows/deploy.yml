@@ -1,0 +1,140 @@
+name: Test, Build & Deploy CityFix AI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  test-and-build:
+    name: Lint, Build & Smoke Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Run lint and build checks
+        run: |
+          npm run lint
+          npm run build
+
+      - name: Validate HTML asset references and secret hygiene
+        run: |
+          python - <<'PY'
+          from html.parser import HTMLParser
+          from pathlib import Path
+
+          class AssetChecker(HTMLParser):
+              def __init__(self):
+                  super().__init__()
+                  self.refs = []
+              def handle_starttag(self, tag, attrs):
+                  attr_map = dict(attrs)
+                  for key in ("src", "href"):
+                      val = attr_map.get(key, "")
+                      if val and not val.startswith(("http://", "https://", "mailto:", "#", "data:", "javascript:")):
+                          self.refs.append(val.split("#")[0].split("?")[0])
+
+          for page in ("index.html", "app.html"):
+              path = Path(page)
+              parser = AssetChecker()
+              parser.feed(path.read_text(encoding="utf-8"))
+              missing = [ref for ref in parser.refs if ref and not (path.parent / ref).exists()]
+              if missing:
+                  raise SystemExit(f"{page}: missing local assets: {missing}")
+              print(f"{page}: verified {len(parser.refs)} local references")
+          PY
+          if grep -R -n -E 'sb_secret_[A-Za-z0-9]+' --include='*.js' --include='*.html' --include='*.ts' .; then
+            echo "Potential privileged Supabase secret found in source files"
+            exit 1
+          fi
+
+      - name: Run Express server HTTP smoke tests
+        run: |
+          PORT=3100 node server.js > server.log 2>&1 &
+          SERVER_PID=$!
+          trap 'kill $SERVER_PID 2>/dev/null || true' EXIT
+
+          for i in $(seq 1 20); do
+            if curl -sf http://127.0.0.1:3100/api/capabilities >/dev/null; then
+              break
+            fi
+            sleep 0.5
+          done
+
+          for route in "/" "/index.html" "/app.html" "/street-walk-3d.js" "/three-city.js" "/api/capabilities"; do
+            code=$(curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:3100${route}")
+            echo "${route} -> HTTP ${code}"
+            test "$code" = "200"
+          done
+
+          caps=$(curl -sf http://127.0.0.1:3100/api/capabilities)
+          echo "$caps" | grep -q '"requiresMapsApiKey":false'
+
+          bad_code=$(curl -s -o /dev/null -w "%{http_code}" -X POST -H "Content-Type: application/json" -d '{}' http://127.0.0.1:3100/api/triage-image)
+          echo "POST /api/triage-image (empty) -> HTTP ${bad_code}"
+          test "$bad_code" = "400" || test "$bad_code" = "503"
+
+      - name: Upload deployable build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cityfix-ai-dist
+          path: |
+            .
+            !.git
+            !node_modules
+            !server.log
+          retention-days: 7
+
+  deploy:
+    name: Deploy to GitHub Pages
+    needs: test-and-build
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    runs-on: ubuntu-latest
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: .
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+      - name: Trigger optional Render deploy hook
+        if: env.RENDER_DEPLOY_HOOK_URL != ''
+        env:
+          RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+        run: curl -fsS -X POST "$RENDER_DEPLOY_HOOK_URL"
